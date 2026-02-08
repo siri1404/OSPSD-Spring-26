@@ -1,4 +1,4 @@
-OSPSD Spring '26
+# OSPSD Spring '26 - Team 6
 
 Team Members
 1. Pooja Gayathri Kanala
