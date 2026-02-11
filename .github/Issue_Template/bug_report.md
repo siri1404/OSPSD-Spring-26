@@ -8,25 +8,25 @@ title: "fix: <short description of the bug>"
 
 ## 1. Summary
 
-<!-- Provide a concise description of the issue in 2–3 sentences -->
+Provide a concise description of the issue in 2–3 sentences
 
 ---
 
 ## 2. Expected Behavior
 
-<!-- What should have happened? -->
+What should have happened?
 
 ---
 
 ## 3. Actual Behavior
 
-<!-- What actually happened? Include error messages, logs, or screenshots if applicable -->
+What actually happened? Include error messages, logs, or screenshots if applicable
 
 ---
 
 ## 4. Steps to Reproduce
 
-<!-- Provide clear, step-by-step reproduction instructions -->
+Provide clear, step-by-step reproduction instructions
 
 1. 
 2. 
@@ -45,10 +45,10 @@ title: "fix: <short description of the bug>"
 
 ## 6. Suspected Root Cause (Optional)
 
-<!-- If you have insight into what may be causing the issue -->
+If you have insight into what may be causing the issue
 
 ---
 
 ## 7. Additional Context
 
-<!-- Any additional information that may help reviewers -->
+Any additional information that may help reviewers

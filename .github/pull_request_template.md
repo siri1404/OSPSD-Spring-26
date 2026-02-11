@@ -1,22 +1,12 @@
 # Pull Request Title
-
-<!--
-Format: <type>: <short, descriptive summary>
-
-Examples:
-- feat: add Kafka-based ingestion pipeline for real-time reviews
-- fix: resolve null pointer crash in recommendation service
-- refactor: simplify Spark aggregation logic
--->
-
+---
+name: Feature Request
+title: "feat: <short descriptive summary>"
 ---
 
 ## Summary
 
-<!-- 
-High-level overview in 2–3 sentences.
-Someone should understand the PR without scrolling further.
--->
+High-level overview in 2–3 sentences. Someone should understand the PR without scrolling further.
 
 **Type of Change**
 - [ ] Feature
@@ -31,28 +21,19 @@ Someone should understand the PR without scrolling further.
 
 ## Problem Statement
 
-<!-- 
-Clearly state the problem this PR addresses.
-What was broken, missing, inefficient, or unclear?
--->
+Clearly state the problem this PR addresses. What was broken, missing, inefficient, or unclear?
 
 ---
 
 ## Solution Overview
 
-<!-- 
-Explain the solution at a conceptual level.
-Avoid code-level details here.
--->
+Explain the solution at a conceptual level. Avoid code-level details here.
 
 ---
 
 ## Detailed Changes
 
-<!-- 
-List all significant changes.
-Be explicit and concrete.
--->
+List all significant changes.Be explicit and concrete.
 
 ### 4.1 Added
 - 
@@ -67,16 +48,13 @@ Be explicit and concrete.
 
 ## Technical Design & Implementation
 
-<!-- 
-Explain HOW the solution works internally.
-This section is critical for reviewers.
--->
+Explain HOW the solution works internally. This section is critical for reviewers.
 
 ---
 
 ## Edge Cases & Failure Handling
 
-<!-- Demonstrate robustness -->
+Demonstrate robustness
 
 - 
 - 
@@ -85,7 +63,7 @@ This section is critical for reviewers.
 
 ## Testing & Validation
 
-<!-- Proof that this PR works -->
+Proof that this PR works
 
 ### Test Coverage
 

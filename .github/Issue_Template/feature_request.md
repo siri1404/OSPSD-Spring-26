@@ -8,31 +8,31 @@ title: "feat: <short description of the feature>"
 
 ## 1. Problem Statement
 
-<!-- Clearly describe the limitation or pain point -->
+Clearly describe the limitation or pain point
 
 ---
 
 ## 2. Proposed Solution
 
-<!-- Explanation of how this feature should work -->
+Explanation of how this feature should work
 
 ---
 
 ## 3. Use Case / Motivation
 
-<!-- Who benefits? Why is this valuable? -->
+Who benefits? Why is this valuable?
 
 ---
 
 ## 4. Alternatives Considered
 
-<!-- Other possible approaches and why they were not chosen -->
+Other possible approaches and why they were not chosen
 
 ---
 
 ## 5. Impact & Scope
 
-<!-- What parts of the system are affected? -->
+What parts of the system are affected?
 
 - [ ] Backend
 - [ ] Frontend
@@ -54,4 +54,4 @@ title: "feat: <short description of the feature>"
 
 ## 7. Additional Context
 
-<!-- Mockups, diagrams, references, related issues, etc. -->
+Mockups, diagrams, references, related issues, etc.
