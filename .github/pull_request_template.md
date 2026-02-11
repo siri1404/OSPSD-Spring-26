@@ -18,8 +18,6 @@ High-level overview in 2–3 sentences.
 Someone should understand the PR without scrolling further.
 -->
 
----
-
 **Type of Change**
 - [ ] Feature
 - [ ] Bug fix
@@ -103,3 +101,8 @@ This section is critical for reviewers.
 ```
 
 ---
+
+### Commits
+Each commit in the PR should represent a single purpose.
+It should be clear and concise.
+Squash unnecessary WIP commits before merging.
