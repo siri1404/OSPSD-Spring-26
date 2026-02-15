@@ -18,6 +18,7 @@ dev = [
     "pymdown-extensions>=10.16.1",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
+    "pytest-mock>=3.10.0",
     "ruff>=0.12.7",
     "types-requests>=2.32.4.20250611",
     "google-cloud-storage>=2.10.0",
