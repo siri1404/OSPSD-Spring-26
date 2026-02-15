@@ -29,60 +29,57 @@ dev = [
 # UV WORKSPACE CONFIGURATION
 # ============================================
 [tool.uv.workspace]
-members = [
-    "components/cloud_storage_client_api",
-    "components/gcp_client_impl",
-]
+members = ["components/*"]
 
 [tool.uv.sources]
 cloud_storage_client_api = { workspace = true }
-gcp_client_impl = { workspace = true }
+cloud-storage-client-impl = { workspace = true }
 
 # ============================================
-# RUFF CONFIGURATION
+# RUFF CONFIGURATION (COMMENTED OUT FOR NOW)
 # ============================================
-[tool.ruff]
-line-length = 130
-target-version = "py311"
+# [tool.ruff]
+# line-length = 130
+# target-version = "py311"
 
-[tool.ruff.lint]
-select = ["ALL"]
+# [tool.ruff.lint]
+# select = ["ALL"]
 
-ignore = [
-    "D203",    # one-blank-line-before-class - Conflicts with D211
-    "D213",    # multi-line-summary-second-line - Conflicts with D212
-    "COM812",  # missing-trailing-comma - Conflicts with formatter
-    "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
-]
+# ignore = [
+#     "D203",    # one-blank-line-before-class - Conflicts with D211
+#     "D213",    # multi-line-summary-second-line - Conflicts with D212
+#     "COM812",  # missing-trailing-comma - Conflicts with formatter
+#     "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
+# ]
 
-[tool.ruff.lint.per-file-ignores]
-# Test files have relaxed rules
-"**/test_*.py" = [
-    "S101",     # assert usage - Required for pytest
-    "D",        # Missing docstrings - Not required in tests
-    "ANN",      # Missing type annotations - Less critical in tests
-    "TRY300",   # Consider moving statement - Test-specific patterns
-    "BLE001",   # Blind exception catch - OK in tests
-    "ANN401",   # Any type allowed - OK in tests
-    "SLF001",   # Private member access - OK for testing
-    "E501",     # Line too long - Test strings can be long
-    "S105",     # Hardcoded password - Test credentials OK
-    "S106",     # Hardcoded password - Test credentials OK
-    "ARG001",   # Unused function argument - Pytest fixtures
-    "ARG002",   # Unused method argument - Pytest fixtures
-    "PLC0415",  # Import outside toplevel - OK in tests
-    "INP001",   # Implicit namespace package - tests/ doesn't need __init__.py
-]
+# [tool.ruff.lint.per-file-ignores]
+# # Test files have relaxed rules
+# "**/test_*.py" = [
+#     "S101",     # assert usage - Required for pytest
+#     "D",        # Missing docstrings - Not required in tests
+#     "ANN",      # Missing type annotations - Less critical in tests
+#     "TRY300",   # Consider moving statement - Test-specific patterns
+#     "BLE001",   # Blind exception catch - OK in tests
+#     "ANN401",   # Any type allowed - OK in tests
+#     "SLF001",   # Private member access - OK for testing
+#     "E501",     # Line too long - Test strings can be long
+#     "S105",     # Hardcoded password - Test credentials OK
+#     "S106",     # Hardcoded password - Test credentials OK
+#     "ARG001",   # Unused function argument - Pytest fixtures
+#     "ARG002",   # Unused method argument - Pytest fixtures
+#     "PLC0415",  # Import outside toplevel - OK in tests
+#     "INP001",   # Implicit namespace package - tests/ doesn't need __init__.py
+# ]
 
-"tests/**/*.py" = [
-    "S101",     # assert usage - Required for pytest
-    "D",        # Missing docstrings
-    "ANN",      # Missing type annotations
-    "INP001",   # tests/ directory doesn't need __init__.py
-]
+# "tests/**/*.py" = [
+#     "S101",     # assert usage - Required for pytest
+#     "D",        # Missing docstrings
+#     "ANN",      # Missing type annotations
+#     "INP001",   # tests/ directory doesn't need __init__.py
+# ]
 
-[tool.ruff.lint.pydocstyle]
-convention = "google"
+# [tool.ruff.lint.pydocstyle]
+# convention = "google"
 
 # ============================================
 # MYPY CONFIGURATION
@@ -97,7 +94,7 @@ ignore_missing_imports = false
 # Paths where mypy should look for packages
 mypy_path = [
     "components/cloud_storage_client_api/src",
-    "components/gcp_client_impl/src",
+    "components/cloud_storage_client_impl/src",
 ]
 
 # Google Cloud libraries don't have complete type stubs

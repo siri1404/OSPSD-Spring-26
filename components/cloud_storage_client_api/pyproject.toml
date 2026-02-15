@@ -1,8 +1,6 @@
 [project]
 name = "cloud-storage-client-api"
 version = "0.1.0"
-description = "Abstract interface for cloud storage clients"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -12,6 +10,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cloud_storage_client_api"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/cloud_storage_client_api/py.typed" = "cloud_storage_client_api/py.typed"
