@@ -146,4 +146,3 @@ workflows:
       - e2e_test:
           requires:
             - integration_test
-
