@@ -211,10 +211,16 @@ version = "0.1.0"
 source = { editable = "components/cloud_storage_client_impl" }
 dependencies = [
     { name = "cloud-storage-client-api" },
+    { name = "google-auth" },
+    { name = "google-cloud-storage" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" }]
+requires-dist = [
+    { name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" },
+    { name = "google-auth", specifier = ">=2.0.0" },
+    { name = "google-cloud-storage", specifier = ">=2.10.0" },
+]
 
 [[package]]
 name = "colorama"

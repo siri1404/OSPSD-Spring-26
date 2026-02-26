@@ -2,7 +2,11 @@
 name = "cloud-storage-client-impl"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["cloud-storage-client-api"]
+dependencies = [
+	"cloud-storage-client-api",
+	"google-auth>=2.0.0",
+	"google-cloud-storage>=2.10.0",
+]
 
 [build-system]
 requires = ["hatchling"]
