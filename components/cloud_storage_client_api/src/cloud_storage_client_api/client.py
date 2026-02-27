@@ -17,9 +17,10 @@ class ObjectInfo:
 
 
 class CloudStorageClient(ABC):
-
     @abstractmethod
-    def upload_file(self, *, local_path: str, key: str, content_type: str | None = None) -> ObjectInfo:
+    def upload_file(
+        self, *, local_path: str, key: str, content_type: str | None = None
+    ) -> ObjectInfo:
         raise NotImplementedError
 
     @abstractmethod

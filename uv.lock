@@ -9,7 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "cloud-storage-client-api",
-    "cloud-storage-client-impl",
+    "gcp-client-impl",
     "ospsd-spring-26",
 ]
 
@@ -206,23 +206,6 @@ version = "0.1.0"
 source = { editable = "components/cloud_storage_client_api" }
 
 [[package]]
-name = "cloud-storage-client-impl"
-version = "0.1.0"
-source = { editable = "components/cloud_storage_client_impl" }
-dependencies = [
-    { name = "cloud-storage-client-api" },
-    { name = "google-auth" },
-    { name = "google-cloud-storage" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" },
-    { name = "google-auth", specifier = ">=2.0.0" },
-    { name = "google-cloud-storage", specifier = ">=2.10.0" },
-]
-
-[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -392,6 +375,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ac/97/a538654732974a94ff96c1db621fa464f455c02d4bb7d2652f4edc21d600/cryptography-46.0.5-pp311-pypy311_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:d861ee9e76ace6cf36a6a89b959ec08e7bc2493ee39d07ffe5acb23ef46d27da", size = 4217990, upload-time = "2026-02-10T19:18:25.957Z" },
     { url = "https://files.pythonhosted.org/packages/ae/11/7e500d2dd3ba891197b9efd2da5454b74336d64a7cc419aa7327ab74e5f6/cryptography-46.0.5-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:2b7a67c9cd56372f3249b39699f2ad479f6991e62ea15800973b956f4b73e257", size = 4381252, upload-time = "2026-02-10T19:18:27.496Z" },
     { url = "https://files.pythonhosted.org/packages/bc/58/6b3d24e6b9bc474a2dcdee65dfd1f008867015408a271562e4b690561a4d/cryptography-46.0.5-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:8456928655f856c6e1533ff59d5be76578a7157224dbd9ce6872f25055ab9ab7", size = 3407605, upload-time = "2026-02-10T19:18:29.233Z" },
+]
+
+[[package]]
+name = "gcp-client-impl"
+version = "0.1.0"
+source = { editable = "components/gcp_client_impl" }
+dependencies = [
+    { name = "cloud-storage-client-api" },
+    { name = "google-auth" },
+    { name = "google-cloud-storage" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" },
+    { name = "google-auth", specifier = ">=2.0.0" },
+    { name = "google-cloud-storage", specifier = ">=2.10.0" },
 ]
 
 [[package]]

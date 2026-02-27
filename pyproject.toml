@@ -33,7 +33,7 @@ members = ["components/*"]
 
 [tool.uv.sources]
 cloud_storage_client_api = { workspace = true }
-cloud-storage-client-impl = { workspace = true }
+gcp-client-impl = { workspace = true }
 
 # ============================================
 # RUFF CONFIGURATION (COMMENTED OUT FOR NOW)
@@ -94,7 +94,7 @@ ignore_missing_imports = false
 # Paths where mypy should look for packages
 mypy_path = [
     "components/cloud_storage_client_api/src",
-    "components/cloud_storage_client_impl/src",
+    "components/gcp_client_impl/src",
 ]
 
 # Google Cloud libraries don't have complete type stubs

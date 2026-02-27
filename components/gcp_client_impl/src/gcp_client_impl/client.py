@@ -25,6 +25,7 @@ class GCPClientConfig:
     credentials_path: str | None
     service_key: str | None
 
+
 class GCPCloudStorageClient(CloudStorageClient):
     def __init__(
         self,
@@ -36,7 +37,8 @@ class GCPCloudStorageClient(CloudStorageClient):
         self._config = GCPClientConfig(
             bucket_name=bucket_name or os.getenv("GCS_BUCKET_NAME"),
             project_id=project_id or os.getenv("GOOGLE_CLOUD_PROJECT"),
-            credentials_path=credentials_path or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+            credentials_path=credentials_path
+            or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
             service_key=os.getenv("GCP_SERVICE_KEY"),
         )
         self._storage_client: Any | None = None
@@ -81,7 +83,9 @@ class GCPCloudStorageClient(CloudStorageClient):
 
         credentials = self._build_credentials()
         if credentials is not None:
-            return storage.Client(project=self._config.project_id, credentials=credentials)
+            return storage.Client(
+                project=self._config.project_id, credentials=credentials
+            )
 
         if self._config.credentials_path:
             return storage.Client.from_service_account_json(
@@ -117,67 +121,80 @@ class GCPCloudStorageClient(CloudStorageClient):
             metadata=blob.metadata or {},
         )
 
-    def upload_file(self, *, local_path: str, key: str, content_type: str | None = None) -> ObjectInfo:
+    def upload_file(
+        self, *, local_path: str, key: str, content_type: str | None = None
+    ) -> ObjectInfo:
         try:
-            with open(local_path, 'rb') as file:
+            with open(local_path, "rb") as file:
                 data = file.read()
         except OSError as exc:
             raise FileNotFoundError(f"Cannot read local file '{local_path}'") from exc
-        
+
         return self.upload_bytes(data=data, key=key, content_type=content_type)
 
-    def upload_bytes(self, *, data: bytes, key: str, content_type: str | None = None, metadata: Mapping[str, str] | None = None) -> ObjectInfo:
+    def upload_bytes(
+        self,
+        *,
+        data: bytes,
+        key: str,
+        content_type: str | None = None,
+        metadata: Mapping[str, str] | None = None,
+    ) -> ObjectInfo:
         bucket = self._get_bucket()
         blob = bucket.blob(key)
-        
+
         # Set content type if provided
         if content_type:
             blob.content_type = content_type
-        
+
         # Set custom metadata if provided
         if metadata:
             blob.metadata = dict(metadata)
-        
+
         # Upload the data
         blob.upload_from_string(data, content_type=content_type)
-        
+
         # Reload to get updated metadata
         blob.reload()
-        
+
         return self._blob_to_object_info(blob)
 
     def download_bytes(self, *, key: str) -> bytes:
         bucket = self._get_bucket()
         blob = bucket.blob(key)
-        
+
         if not blob.exists():
-            raise FileNotFoundError(f"Object '{key}' not found in bucket '{self._get_bucket_name()}'")
-        
+            raise FileNotFoundError(
+                f"Object '{key}' not found in bucket '{self._get_bucket_name()}'"
+            )
+
         return blob.download_as_bytes()
 
     def list(self, *, prefix: str) -> list[ObjectInfo]:
         bucket = self._get_bucket()
         blobs = bucket.list_blobs(prefix=prefix)
-        
+
         return [self._blob_to_object_info(blob) for blob in blobs]
 
     def delete(self, *, key: str) -> None:
         bucket = self._get_bucket()
         blob = bucket.blob(key)
-        
+
         if not blob.exists():
-            raise FileNotFoundError(f"Object '{key}' not found in bucket '{self._get_bucket_name()}'")
-        
+            raise FileNotFoundError(
+                f"Object '{key}' not found in bucket '{self._get_bucket_name()}'"
+            )
+
         blob.delete()
 
     def head(self, *, key: str) -> ObjectInfo | None:
         bucket = self._get_bucket()
         blob = bucket.blob(key)
-        
+
         if not blob.exists():
             return None
-        
+
         # Reload to get fresh metadata
         blob.reload()
-        
+
         return self._blob_to_object_info(blob)
