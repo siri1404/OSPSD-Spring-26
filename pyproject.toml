@@ -36,7 +36,7 @@ cloud_storage_client_api = { workspace = true }
 gcp-client-impl = { workspace = true }
 
 # ============================================
-# RUFF CONFIGURATION (COMMENTED OUT FOR NOW)
+# RUFF CONFIGURATION
 # ============================================
 [tool.ruff]
 line-length = 130
@@ -95,7 +95,6 @@ ignore = [
 
 "**/gcp_client_impl/**/*.py" = [
     "ANN401",   # Any typing - necessary for external Google Cloud library objects without complete stubs
-    "D102",     # method docstrings - some are challenging with external library types
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -120,12 +119,11 @@ mypy_path = [
 # Google Cloud libraries don't have complete type stubs
 [[tool.mypy.overrides]]
 module = [
-    "google.*",
     "googleapiclient.*",
     "google.cloud.*",
     "google.auth.*",
 ]
-ignore_missing_imports = true
+ignore_missing_imports = false
 
 # Pytest fixtures don't have type hints
 [[tool.mypy.overrides]]

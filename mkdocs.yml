@@ -1,6 +1,9 @@
 site_name: OSPSD-Spring-26 Documentation
 nav:
   - Home: index.md
-  # Add more pages as you create them:
-  # - Cloud Storage API: cloud_storage_client_api.md
-  # - GCP Impl: cloud_storage_client_impl.md
+  - Contributing: CONTRIBUTING.md
+  - Repository structure: structure.md
+  - Cloud Storage Interface: cloud-storage-client.md
+  - GCP Implementation: gcp-impl.md
+  - Testing: testing.md
+  - CircleCI setup: circleci-setup.md
