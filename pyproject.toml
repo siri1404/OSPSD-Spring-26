@@ -123,7 +123,7 @@ module = [
     "google.cloud.*",
     "google.auth.*",
 ]
-ignore_missing_imports = false
+ignore_missing_imports = true
 
 # Pytest fixtures don't have type hints
 [[tool.mypy.overrides]]
