@@ -1,0 +1,5 @@
+- `components/`:
+    - `cloud_storage_client_api` contains the abstract storage interface.
+    - `gcp_client_impl` contains the Google Cloud Storage implementation.
+- `tests/` contains unit, integration, and end-to-end tests.
+- `docs/` contains project documentation.

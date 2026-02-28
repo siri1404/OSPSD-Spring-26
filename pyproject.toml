@@ -1,0 +1,190 @@
+[project]
+name = "ospsd-spring-26"
+version = "0.1.0"
+description = "Cloud Storage Client with GCP Implementation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+# ============================================
+# DEPENDENCY GROUPS
+# ============================================
+[dependency-groups]
+dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.15",
+    "mkdocstrings-python>=1.16.12",
+    "mypy>=1.17.0",
+    "pymdown-extensions>=10.16.1",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-mock>=3.10.0",
+    "ruff>=0.12.7",
+    "types-requests>=2.32.4.20250611",
+    "google-cloud-storage>=2.10.0",
+    "google-api-python-client-stubs>=1.30.0",
+]
+
+# ============================================
+# UV WORKSPACE CONFIGURATION
+# ============================================
+[tool.uv.workspace]
+members = ["components/*"]
+
+[tool.uv.sources]
+cloud_storage_client_api = { workspace = true }
+gcp-client-impl = { workspace = true }
+
+# ============================================
+# RUFF CONFIGURATION
+# ============================================
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+ignore = [
+    "D203",    # one-blank-line-before-class - Conflicts with D211
+    "D213",    # multi-line-summary-second-line - Conflicts with D212
+    "COM812",  # missing-trailing-comma - Conflicts with formatter
+    "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",     # assert - required for pytest
+    "D102",     # docstrings in methods - not required in tests
+    "D103",     # docstrings in functions - not required in tests
+    "ANN",      # annotations - less critical in tests
+    "SLF001",   # private member access - OK for testing internals
+    "INP001",   # implicit namespace - tests/ has no init.py
+    "S105",     # hardcoded password - test credentials are fine
+    "S106",     # hardcoded password - test credentials are fine
+    "ARG001",   # unused arg - pytest fixtures
+    "ARG002",   # unused method arg - pytest fixtures
+    "TRY300",   # consider moving statement - test-specific patterns
+    "BLE001",   # blind exception - acceptable in tests
+    "PLC0415",  # import outside toplevel - OK in tests
+    "PLR2004",  # magic values - acceptable in tests
+    "PLW0108",  # lambda in tests - acceptable
+    "TC003",    # Generator needed at runtime for pytest fixtures
+    "F401",     # Can have unused imports in TYPE_CHECKING
+]
+
+"components/**/tests/**/*.py" = [
+    "S101",     # assert - required for pytest
+    "D102",     # docstrings in methods - not required in tests
+    "D103",     # docstrings in functions - not required in tests
+    "ANN",      # annotations - less critical in tests
+    "SLF001",   # private member access - OK for testing internals
+    "INP001",   # implicit namespace - tests/ has no init.py
+    "S105",     # hardcoded password - test credentials are fine
+    "S106",     # hardcoded password - test credentials are fine
+    "ARG001",   # unused arg - pytest fixtures
+    "ARG002",   # unused method arg - pytest fixtures
+    "TRY300",   # consider moving statement - test-specific patterns
+    "BLE001",   # blind exception - acceptable in tests
+    "PLC0415",  # import outside toplevel - OK in tests
+    "PLR2004",  # magic values - acceptable in tests
+    "PLW0108",  # lambda in tests - acceptable
+    "TC003",    # Generator needed at runtime for pytest fixtures
+    "F401",     # Can have unused imports in TYPE_CHECKING
+]
+
+"**/gcp_client_impl/**/*.py" = [
+    "ANN401",   # Any typing - necessary for external Google Cloud library objects without complete stubs
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ============================================
+# MYPY CONFIGURATION
+# ============================================
+[tool.mypy]
+python_version = "3.11"
+strict = true
+explicit_package_bases = true
+warn_unused_ignores = true
+ignore_missing_imports = false
+
+# Paths where mypy should look for packages
+mypy_path = [
+    "components/cloud_storage_client_api/src",
+    "components/gcp_client_impl/src",
+]
+
+# Google Cloud libraries: google-api-python-client-stubs is installed for googleapiclient
+# Override for google.cloud.* and google.auth.* which may have incomplete stubs
+[[tool.mypy.overrides]]
+module = [
+    "google.cloud.*",
+    "google.auth.*",
+]
+ignore_missing_imports = true
+
+# Pytest fixtures don't have type hints
+[[tool.mypy.overrides]]
+module = ["tests.*", "components.*.tests.*"]
+disallow_untyped_decorators = false
+
+# ============================================
+# PYTEST CONFIGURATION
+# ============================================
+[tool.pytest.ini_options]
+pythonpath = [
+    ".",
+    "components/cloud_storage_client_api/src",
+    "components/gcp_client_impl/src",
+]
+testpaths = ["tests", "components/*/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+addopts = [
+    "--verbose",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=components",
+    "--cov-report=term-missing",
+]
+
+markers = [
+    "unit: Unit tests (fast, isolated, mocked)",
+    "integration: Integration tests (medium speed, real dependencies)",
+    "e2e: End-to-end tests (slow, full system with real APIs)",
+    "circleci: Tests runnable in CI without local credential files",
+    "local_credentials: Tests requiring a local service account key file",
+]
+
+# ============================================
+# COVERAGE CONFIGURATION
+# ============================================
+[tool.coverage.run]
+source = ["components"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/main.py",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = false
+precision = 2
+
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
