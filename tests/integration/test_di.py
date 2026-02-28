@@ -5,9 +5,8 @@ from __future__ import annotations
 import concurrent.futures
 from typing import TYPE_CHECKING
 
-import pytest
-
 import gcp_client_impl
+import pytest
 from cloud_storage_client_api.client import CloudStorageClient, ObjectInfo
 from cloud_storage_client_api.di import get_client, override_get_client, register_get_client
 
