@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import Mapping
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 from cloud_storage_client_api.client import CloudStorageClient, ObjectInfo
 from cloud_storage_client_api.di import (
@@ -18,9 +21,7 @@ from cloud_storage_client_api.di import (
 
 # We can't instantiate the ABC directly, so we make a minimal concrete subclass.
 class _FakeClient(CloudStorageClient):
-    def upload_file(
-        self, *, local_path: str, key: str, content_type: str | None = None
-    ) -> ObjectInfo:
+    def upload_file(self, *, local_path: str, key: str, content_type: str | None = None) -> ObjectInfo:
         raise NotImplementedError
 
     def upload_bytes(
@@ -48,6 +49,7 @@ class _FakeClient(CloudStorageClient):
 
 @pytest.fixture(autouse=True)
 def clean_registry() -> Generator[None, None, None]:
+    """Fixture to clean the DI registry before and after each test."""
     # Wipe the default slot before and after every test so they don't bleed.
     unregister_get_client()
     yield
@@ -59,21 +61,25 @@ class TestRegistry:
     """Basic register / get / unregister behaviour."""
 
     def test_raises_when_nothing_registered(self) -> None:
+        """Test that get_client raises RuntimeError when nothing is registered."""
         with pytest.raises(RuntimeError, match="default"):
             get_client()
 
     def test_returns_instance_after_registration(self) -> None:
+        """Test that get_client returns the registered instance."""
         fake = _FakeClient()
         register_get_client(lambda: fake)
         assert get_client() is fake
 
     def test_unregister_makes_get_client_raise_again(self) -> None:
+        """Test that unregister removes the client factory."""
         register_get_client(lambda: _FakeClient())
         unregister_get_client()
         with pytest.raises(RuntimeError):
             get_client()
 
     def test_second_registration_overwrites_first(self) -> None:
+        """Test that second registration overwrites the first."""
         # Last writer wins.
         first, second = _FakeClient(), _FakeClient()
         register_get_client(lambda: first)
@@ -81,6 +87,7 @@ class TestRegistry:
         assert get_client() is second
 
     def test_named_provider_works_independently(self) -> None:
+        """Test that named providers work independently."""
         client_a = _FakeClient()
         client_b = _FakeClient()
         register_get_client(lambda: client_a, name="gcp")
@@ -89,6 +96,7 @@ class TestRegistry:
         assert get_client(name="s3") is client_b
 
     def test_override_works_without_registered_default(self) -> None:
+        """Test that override works even when no default is registered."""
         temp = _FakeClient()
         with override_get_client(lambda: temp):
             assert get_client() is temp
@@ -101,6 +109,7 @@ class TestOverride:
     """The override_get_client() context manager swaps the factory temporarily."""
 
     def test_override_is_active_inside_context(self) -> None:
+        """Test that override is active inside the context manager."""
         real = _FakeClient()
         temp = _FakeClient()
         register_get_client(lambda: real)
@@ -109,6 +118,7 @@ class TestOverride:
             assert get_client() is temp
 
     def test_original_is_restored_after_context_exits(self) -> None:
+        """Test that original is restored after context manager exits."""
         real = _FakeClient()
         register_get_client(lambda: real)
 

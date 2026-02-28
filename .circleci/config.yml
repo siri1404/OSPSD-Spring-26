@@ -18,7 +18,7 @@ jobs:
           command: |
             uv venv --python 3.11
             source .venv/bin/activate
-            uv sync --all-packages --extra dev --verbose
+            uv sync --all-packages --group dev --verbose
       - run:
           name: "Verify Installation"
           command: |
@@ -42,6 +42,11 @@ jobs:
           command: |
             source .venv/bin/activate
             ruff check .
+      - run:
+          name: "Ruff Format Check"
+          command: |
+            source .venv/bin/activate
+            ruff format --check .
 
   typecheck:
     docker:
@@ -53,7 +58,7 @@ jobs:
           name: "Mypy Strict"
           command: |
             source .venv/bin/activate
-            mypy components/ --explicit-package-bases
+            mypy components/
 
   unit_test:
     docker:
@@ -106,6 +111,10 @@ jobs:
   e2e_test:
     docker:
       - image: cimg/python:3.11
+    environment:
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+      GCP_SERVICE_KEY: ${GCP_SERVICE_KEY}
     steps:
       - attach_workspace:
           at: .

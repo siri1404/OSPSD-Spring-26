@@ -1,4 +1,6 @@
-import cloud_storage_client_impl  # noqa: F401 - imported for side effects (registers implementation)
+"""Integration tests for dependency injection and client registration."""
+
+import gcp_client_impl
 from cloud_storage_client_api.di import get_client
 
 

@@ -38,48 +38,68 @@ gcp-client-impl = { workspace = true }
 # ============================================
 # RUFF CONFIGURATION (COMMENTED OUT FOR NOW)
 # ============================================
-# [tool.ruff]
-# line-length = 130
-# target-version = "py311"
+[tool.ruff]
+line-length = 130
+target-version = "py311"
 
-# [tool.ruff.lint]
-# select = ["ALL"]
+[tool.ruff.lint]
+select = ["ALL"]
 
-# ignore = [
-#     "D203",    # one-blank-line-before-class - Conflicts with D211
-#     "D213",    # multi-line-summary-second-line - Conflicts with D212
-#     "COM812",  # missing-trailing-comma - Conflicts with formatter
-#     "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
-# ]
+ignore = [
+    "D203",    # one-blank-line-before-class - Conflicts with D211
+    "D213",    # multi-line-summary-second-line - Conflicts with D212
+    "COM812",  # missing-trailing-comma - Conflicts with formatter
+    "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
+]
 
-# [tool.ruff.lint.per-file-ignores]
-# # Test files have relaxed rules
-# "**/test_*.py" = [
-#     "S101",     # assert usage - Required for pytest
-#     "D",        # Missing docstrings - Not required in tests
-#     "ANN",      # Missing type annotations - Less critical in tests
-#     "TRY300",   # Consider moving statement - Test-specific patterns
-#     "BLE001",   # Blind exception catch - OK in tests
-#     "ANN401",   # Any type allowed - OK in tests
-#     "SLF001",   # Private member access - OK for testing
-#     "E501",     # Line too long - Test strings can be long
-#     "S105",     # Hardcoded password - Test credentials OK
-#     "S106",     # Hardcoded password - Test credentials OK
-#     "ARG001",   # Unused function argument - Pytest fixtures
-#     "ARG002",   # Unused method argument - Pytest fixtures
-#     "PLC0415",  # Import outside toplevel - OK in tests
-#     "INP001",   # Implicit namespace package - tests/ doesn't need __init__.py
-# ]
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",     # assert - required for pytest
+    "D102",     # docstrings in methods - not required in tests
+    "D103",     # docstrings in functions - not required in tests
+    "ANN",      # annotations - less critical in tests
+    "SLF001",   # private member access - OK for testing internals
+    "INP001",   # implicit namespace - tests/ has no init.py
+    "S105",     # hardcoded password - test credentials are fine
+    "S106",     # hardcoded password - test credentials are fine
+    "ARG001",   # unused arg - pytest fixtures
+    "ARG002",   # unused method arg - pytest fixtures
+    "TRY300",   # consider moving statement - test-specific patterns
+    "BLE001",   # blind exception - acceptable in tests
+    "PLC0415",  # import outside toplevel - OK in tests
+    "PLR2004",  # magic values - acceptable in tests
+    "PLW0108",  # lambda in tests - acceptable
+    "TC003",    # Generator needed at runtime for pytest fixtures
+    "F401",     # Can have unused imports in TYPE_CHECKING
+]
 
-# "tests/**/*.py" = [
-#     "S101",     # assert usage - Required for pytest
-#     "D",        # Missing docstrings
-#     "ANN",      # Missing type annotations
-#     "INP001",   # tests/ directory doesn't need __init__.py
-# ]
+"components/**/tests/**/*.py" = [
+    "S101",     # assert - required for pytest
+    "D102",     # docstrings in methods - not required in tests
+    "D103",     # docstrings in functions - not required in tests
+    "ANN",      # annotations - less critical in tests
+    "SLF001",   # private member access - OK for testing internals
+    "INP001",   # implicit namespace - tests/ has no init.py
+    "S105",     # hardcoded password - test credentials are fine
+    "S106",     # hardcoded password - test credentials are fine
+    "ARG001",   # unused arg - pytest fixtures
+    "ARG002",   # unused method arg - pytest fixtures
+    "TRY300",   # consider moving statement - test-specific patterns
+    "BLE001",   # blind exception - acceptable in tests
+    "PLC0415",  # import outside toplevel - OK in tests
+    "PLR2004",  # magic values - acceptable in tests
+    "PLW0108",  # lambda in tests - acceptable
+    "TC003",    # Generator needed at runtime for pytest fixtures
+    "F401",     # Can have unused imports in TYPE_CHECKING
+]
 
-# [tool.ruff.lint.pydocstyle]
-# convention = "google"
+"**/gcp_client_impl/**/*.py" = [
+    "ANN401",   # Any typing - necessary for external Google Cloud library objects without complete stubs
+    "D102",     # method docstrings - some are challenging with external library types
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 # ============================================
 # MYPY CONFIGURATION
@@ -116,7 +136,11 @@ disallow_untyped_decorators = false
 # PYTEST CONFIGURATION
 # ============================================
 [tool.pytest.ini_options]
-pythonpath = [".", "components"]
+pythonpath = [
+    ".",
+    "components/cloud_storage_client_api/src",
+    "components/gcp_client_impl/src",
+]
 testpaths = ["tests", "components/*/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
@@ -126,16 +150,14 @@ addopts = [
     "--verbose",
     "--strict-markers",
     "--strict-config",
-    "--cov=components",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
 ]
 
 markers = [
     "unit: Unit tests (fast, isolated, mocked)",
     "integration: Integration tests (medium speed, real dependencies)",
     "e2e: End-to-end tests (slow, full system with real APIs)",
+    "circleci: Tests runnable in CI without local credential files",
+    "local_credentials: Tests requiring a local service account key file",
 ]
 
 # ============================================
@@ -144,10 +166,10 @@ markers = [
 [tool.coverage.run]
 source = ["components"]
 omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-    "*/__main__.py",
-    "*/test_*.py",
+    "/tests/",
+    "/pycache/",
+    "/main.py",
+    "/test_*.py",
 ]
 
 [tool.coverage.report]
