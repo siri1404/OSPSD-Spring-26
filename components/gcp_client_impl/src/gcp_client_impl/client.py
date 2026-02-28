@@ -123,7 +123,14 @@ class GCPCloudStorageClient(CloudStorageClient):
         return self._get_storage_client().bucket(self._get_bucket_name())
 
     def _blob_to_object_info(self, blob: Any) -> ObjectInfo:
-        """Convert GCS blob to ObjectInfo."""
+        """Convert GCS blob to ObjectInfo.
+
+        Args:
+            blob: GCS blob object from google.cloud.storage.
+
+        Returns:
+            ObjectInfo with metadata extracted from the blob.
+        """
         return ObjectInfo(
             key=blob.name,
             size_bytes=blob.size,

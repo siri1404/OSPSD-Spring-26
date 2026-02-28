@@ -116,10 +116,10 @@ mypy_path = [
     "components/gcp_client_impl/src",
 ]
 
-# Google Cloud libraries don't have complete type stubs
+# Google Cloud libraries: google-api-python-client-stubs is installed for googleapiclient
+# Override for google.cloud.* and google.auth.* which may have incomplete stubs
 [[tool.mypy.overrides]]
 module = [
-    "googleapiclient.*",
     "google.cloud.*",
     "google.auth.*",
 ]
@@ -127,7 +127,7 @@ ignore_missing_imports = true
 
 # Pytest fixtures don't have type hints
 [[tool.mypy.overrides]]
-module = "tests.*"
+module = ["tests.*", "components.*.tests.*"]
 disallow_untyped_decorators = false
 
 # ============================================
@@ -148,6 +148,8 @@ addopts = [
     "--verbose",
     "--strict-markers",
     "--strict-config",
+    "--cov=components",
+    "--cov-report=term-missing",
 ]
 
 markers = [
@@ -163,11 +165,12 @@ markers = [
 # ============================================
 [tool.coverage.run]
 source = ["components"]
+branch = true
 omit = [
-    "/tests/",
-    "/pycache/",
-    "/main.py",
-    "/test_*.py",
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/main.py",
+    "*/__main__.py",
 ]
 
 [tool.coverage.report]

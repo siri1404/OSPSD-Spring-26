@@ -18,7 +18,8 @@
 
 2. Install dependencies:
    ```bash
-   uv sync
+   uv sync --all-packages
+
    ```
 
 3. Create a branch for your work:

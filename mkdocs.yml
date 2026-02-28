@@ -7,3 +7,4 @@ nav:
   - GCP Implementation: gcp-impl.md
   - Testing: testing.md
   - CircleCI setup: circleci-setup.md
+  - Architecture & Design: design.md
