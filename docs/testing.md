@@ -12,14 +12,14 @@ The project uses pytest markers to categorize tests based on their requirements 
 - `e2e`: End-to-end tests that verify the complete application workflow with real GCS
 
 ### Environment-Specific Markers
-- `circleci`: Tests that can run in CI/CD environments without local credential files
-- `local_credentials`: Tests that require local `credentials.json` or service account key files
+- `circleci`: Tests that can run in CI/CD environments using only environment variables
+- `local_credentials`: Tests that require a local service account key file or `GOOGLE_APPLICATION_CREDENTIALS`
 
 ## Running Tests
 
 ### All Unit Tests (Fast)
 ```bash
-uv run pytest src/ --cov=src --cov-fail-under=80
+uv run pytest components/ --cov=components --cov-fail-under=85
 ```
 
 ### CircleCI-Compatible Tests Only
@@ -34,12 +34,12 @@ uv run pytest -m local_credentials
 
 ### Integration Tests
 ```bash
-uv run pytest -m integration
+uv run pytest tests/integration/
 ```
 
 ### E2E Tests
 ```bash
-uv run pytest -m e2e
+uv run pytest tests/e2e/
 ```
 
 ### Exclude Credential-Dependent Tests
@@ -49,96 +49,100 @@ uv run pytest -m "not local_credentials"
 
 ## Test Categories by Environment
 
-### CircleCI/CI Environment
-Tests marked with `@pytest.mark.circleci` can run in CI environments:
-- **Requirements**: Only environment variables (`GOOGLE_APPLICATION_CREDENTIALS`, `GCS_BUCKET_NAME`, `GOOGLE_CLOUD_PROJECT`)
+### Unit Tests (`components/`)
+All unit tests live inside each component and use `@pytest.mark.unit`:
+
+| File | What it tests |
+|---|---|
+| `cloud_storage_client_api/tests/test_client_api.py` | `ObjectInfo` dataclass and `CloudStorageClient` abstract base |
+| `cloud_storage_client_api/tests/test_get_client.py` | DI registry — register, get, override, unregister |
+| `gcp_client_impl/tests/test_config.py` | `GCPCloudStorageClient` construction and config loading |
+| `gcp_client_impl/tests/test_credentials.py` | `_build_credentials()` — service account key parsing |
+| `gcp_client_impl/tests/test_object_info.py` | `_blob_to_object_info()` — GCS blob to `ObjectInfo` mapping |
+| `gcp_client_impl/tests/test_operations.py` | `upload_bytes`, `upload_file`, `download_bytes`, `list`, `delete`, `head` |
+| `gcp_client_impl/tests/test_registration.py` | Auto DI registration when `gcp_client_impl` is imported |
+| `gcp_client_impl/tests/test_storage_client.py` | `_build_storage_client()` — auth mode selection |
+
+### Integration Tests (`tests/integration/`)
+Tests marked with `@pytest.mark.integration` verify component interactions:
+- **Requirements**: No real GCS credentials needed — uses fake clients
 - **What they test**:
-  - Code syntax and imports
-  - Factory function dependency injection
-  - GCP client initialization logic
-  - Application structure integrity
-  - Non-interactive authentication setup
+  - DI registry isolation between tests
+  - Thread safety of concurrent `get_client()` calls
+  - Named provider registration (`default`, `gcp`)
+  - `override_get_client()` context manager behaviour
+
+Example command:
+```bash
+uv run pytest tests/integration/ -v --no-cov
+```
+
+### E2E Tests (`tests/e2e/`)
+Tests marked with `@pytest.mark.e2e` run against real GCS infrastructure.
+They are further split by credential mode:
+
+#### `@pytest.mark.circleci`
+- **Requirements**: `GCS_BUCKET_NAME`, `GOOGLE_CLOUD_PROJECT`, and `GCP_SERVICE_KEY` environment variables
+- **What they test**:
+  - Full upload / download / delete / list / head workflows against real GCS
+  - `main.py` script execution
+  - Client initialization from environment variables
 
 Example CircleCI command:
 ```bash
-uv run pytest -m circleci --tb=short
+uv run pytest tests/e2e/ -m circleci --tb=short
 ```
 
-### Local Development
-Tests marked with `@pytest.mark.local_credentials` require local files:
-- **Requirements**: `credentials.json` or service account key JSON file
+#### `@pytest.mark.local_credentials`
+- **Requirements**: `GOOGLE_APPLICATION_CREDENTIALS` pointing to a local service account key file
 - **What they test**:
-  - Real Google Cloud Storage connectivity
-  - File upload/download operations
-  - Object listing and metadata retrieval
-  - Full end-to-end storage workflows
-
-## Environment Variables for CI
-
-Set these environment variables in your CI environment:
-
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
-export GCS_BUCKET_NAME="your-test-bucket"
-export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-```
+  - Full workflow with file-based credentials
+  - `upload_file()` from a real local path
+  - `main.py` integration with local credentials
 
 ## Authentication Modes
 
-The GCP Cloud Storage client supports two authentication modes:
+The GCP client supports three authentication modes:
 
-### Interactive Mode (Local Development)
-- Uses downloaded service account JSON key file
-- Requires `GOOGLE_APPLICATION_CREDENTIALS` environment variable
-- Used for local development and testing
-- **Not suitable for CI/CD without proper setup**
+### File-Based (`GOOGLE_APPLICATION_CREDENTIALS`)
+- Points to a downloaded service account JSON key file
+- Used for local development
+- **Not suitable for CI without securely mounted files**
 
-### Non-Interactive Mode (CI/CD)
-- Uses environment variables for credentials
-- Base64-encoded service account key in `GCP_SERVICE_KEY`
-- Never requires user interaction
-- **Required for CI/CD environments**
-- Fails fast with clear error messages when credentials are missing
+### Environment Variable (`GCP_SERVICE_KEY`)
+- Raw JSON or base64-encoded service account key stored as an env var
+- **Required for CircleCI and most CI/CD environments**
+- Never requires a file on disk
 
-## Test Examples
+### Application Default Credentials
+- No configuration needed — GCP SDK picks up credentials automatically
+- Works with `gcloud auth application-default login` locally
+- Works with workload identity in GKE/Cloud Run
 
-### Running Tests Without Network Calls
-```bash
-# Only run tests that don't make real API calls
-uv run pytest -m "unit or (circleci and not local_credentials)"
+## Running Without Credentials
+
+Unit and integration tests always pass — no env vars needed.  E2E tests skip cleanly when `GCP_SERVICE_KEY` / `GCS_BUCKET_NAME` / `GOOGLE_CLOUD_PROJECT` are absent.  See [circleci-setup.md](circleci-setup.md) for how to configure credentials in CI.
+
+---
+
+### Tests Structure
+
 ```
+tests/
+├── integration/          # Cross-component interaction
+│   └── test_di.py       # DI registration, provider switching, thread safety
+└── e2e/                 # Real GCS workflows
+    └── test_e2e.py      # Syntax, imports, full CRUD operations
 
-### Running Full Local Test Suite
-```bash
-# Run all tests including those requiring real GCS credentials
-uv run pytest
+components/
+├── cloud_storage_client_api/tests/
+│   ├── test_client_api.py       # ObjectInfo immutability, ABC contract
+│   └── test_get_client.py       # DI factory behavior
+└── gcp_client_impl/tests/
+    ├── test_config.py           # Config precedence, env var fallbacks
+    ├── test_credentials.py      # Auth parsing, JSON validation
+    ├── test_storage_client.py   # Service account and ADC modes
+    ├── test_operations.py       # Upload, download, list, delete, head
+    ├── test_object_info.py      # ObjectInfo field validation
+    └── test_registration.py     # DI auto-registration on import
 ```
-
-### Debugging GCS Issues
-```bash
-# Run only storage-related tests
-uv run pytest -k "upload or download or delete" -v
-```
-
-## Expected Behavior in Different Environments
-
-### Local Development (with GCS credentials)
-- All tests should pass
-- Real GCS API calls succeed
-- Can upload/download/delete objects
-
-### Local Development (without credentials)
-- Unit tests pass
-- Integration/E2E tests skip or fail with clear messages
-- No hanging or infinite waits
-
-### CircleCI (with environment variables)
-- Tests marked `circleci` pass
-- Tests marked `local_credentials` are skipped
-- No interactive authentication attempts
-- Fast execution (no timeouts)
-
-### CircleCI (without environment variables)
-- Tests marked `circleci` skip with clear messages
-- No test failures due to missing credentials
-- Fast execution

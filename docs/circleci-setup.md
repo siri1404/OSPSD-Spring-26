@@ -4,14 +4,28 @@ This document explains how to configure CircleCI for the Cloud Storage Client pr
 
 ## Overview
 
-The CI/CD pipeline includes:
+The pipeline is defined in `.circleci/config.yml` and runs on every branch except `main`.  It has six jobs:
 
-- **Build**: Environment setup with `uv`
-- **Lint**: Code quality checks with `ruff`
-- **Type Check**: Static type validation with `mypy`
-- **Unit Tests**: Fast component tests
-- **Integration Tests**: Tests that verify component interactions without real GCP (all branches)
-- **E2E Tests**: Real GCS integration tests (protected branches only)
+| Job | What it does |
+|---|---|
+| `build` | Installs `uv`, creates the virtualenv, installs all packages, persists the workspace |
+| `lint` | `ruff check .` + `ruff format --check .` |
+| `typecheck` | `mypy components/` (strict) |
+| `unit_test` | `pytest components/` with coverage — must reach 85 % |
+| `integration_test` | `pytest tests/integration/` — no credentials needed |
+| `e2e_test` | `pytest tests/e2e/` — skips credential-dependent tests when env vars are absent |
+
+## Pipeline
+
+All jobs run sequentially on every non-`main` branch:
+
+```
+build → lint ─┐
+              ├─ (parallel) → unit_test → integration_test → e2e_test
+typecheck ────┘
+```
+
+`lint` and `typecheck` both depend on `build` and run in parallel with each other. `unit_test` also depends on `build`.  `integration_test` requires `unit_test`.  `e2e_test` requires `integration_test`.
 
 ## Quick Setup
 
@@ -24,66 +38,59 @@ The CI/CD pipeline includes:
 
 ### 2. Environment Variables
 
-Add these variables in CircleCI **Project Settings** → **Environment Variables**:
+Add these in CircleCI **Project Settings** → **Environment Variables**:
 
-| Variable | Description |
-|----------|-------------|
-| `GCP_SERVICE_KEY` | Base64-encoded GCP service account JSON key |
-| `GCS_BUCKET_NAME` | Name of your test GCS bucket (e.g., `my-test-bucket`) |
-| `GOOGLE_CLOUD_PROJECT` | Your GCP project ID |
+| Variable | Description | Required for |
+|---|---|---|
+| `GCP_SERVICE_KEY` | Base64-encoded GCP service account JSON key | E2E credential tests |
+| `GCS_BUCKET_NAME` | Your test GCS bucket name | E2E credential tests |
+| `GOOGLE_CLOUD_PROJECT` | Your GCP project ID | E2E credential tests |
+
+E2E tests that need credentials **skip** cleanly when these are not set — the pipeline still passes without them.
 
 **To get `GCP_SERVICE_KEY`:**
-1. Download your service account JSON from GCP Console
-2. Encode it: `base64 -i key.json | tr -d '\n'` (Linux/Mac) or use PowerShell on Windows
-3. Copy the output into CircleCI
 
-## Workflows
+```bash
+# Linux / macOS
+base64 -i service-account-key.json | tr -d '\n'
 
-### All Branches
-
-```
-build → lint + type_check + unit_tests → integration_tests
+# Windows PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("service-account-key.json"))
 ```
 
-### Protected Branches (main, develop)
-
-```
-build → lint + type_check + unit_tests → integration_tests → e2e_tests
-```
-
-The difference: E2E tests run only on `main` and `develop` because they need real GCP credentials.
+Paste the output as the `GCP_SERVICE_KEY` value in CircleCI.
 
 ## Local Development
 
-Run the same checks locally before pushing:
+Install dependencies, then run the same commands CircleCI uses:
 
 ```bash
-# Setup
-uv sync
-
-# Quality checks
-uv run ruff check .              # Lint
-uv run mypy src tests            # Type check
-
-# Tests
-uv run pytest src/ -v                    # Unit tests
-uv run pytest tests/integration/ -v      # Integration tests (no credentials needed)
-uv run pytest tests/e2e/ -v              # E2E tests (needs GCP credentials)
+uv sync --all-packages --group dev
+uv run ruff check . && uv run ruff format --check .
+uv run mypy components/
+uv run pytest components/ --cov=components/ --cov-fail-under=85
+uv run pytest tests/integration/ -v --no-cov
+uv run pytest tests/e2e/ -v --no-cov
 ```
+
+See [testing.md](testing.md) for the full list of test commands and marker shortcuts.
 
 ## Troubleshooting
 
-**"GCP_SERVICE_KEY not set"**: Verify the environment variable is added to CircleCI and is a valid base64 string
+**"GCP_SERVICE_KEY not set" or e2e tests skip** — The structural e2e tests still pass; add the three env vars to CircleCI to enable the full workflow tests.
 
-**"Permission denied" in E2E tests**: Ensure your service account has `Storage Object Admin` role in GCP
+**"Permission denied" in E2E tests** — Ensure the service account has the `Storage Object Admin` role on the test bucket.
 
-**"Cannot find bucket"**: Double-check `GCS_BUCKET_NAME` matches your actual bucket name in GCP
+**"Cannot find bucket"** — Double-check `GCS_BUCKET_NAME` matches the actual bucket name in GCP Console.
 
-**Tests fail locally but pass in CI**: Make sure you have the credentials file set up locally (same as CircleCI)
+**`ruff format --check .` fails** — Run `uv run ruff format .` locally, commit the result.
+
+**`mypy components/` fails** — Mypy runs in strict mode. Fix all reported type errors before pushing.
+
+**Coverage below 85 %** — `pytest components/ --cov=components/ --cov-report=term-missing` shows uncovered lines.
 
 ## Security Notes
 
-- Never commit credentials or service account keys to Git
-- E2E tests only run on protected branches (`main`, `develop`)
-- CircleCI encrypts environment variables automatically
-- Service account keys should have minimal required permissions
+- Never commit service account keys to Git
+- CircleCI encrypts environment variables at rest
+- Service account keys should have only `Storage Object Admin` on the test bucket — no broader project permissions
