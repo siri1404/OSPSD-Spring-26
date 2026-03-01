@@ -1,0 +1,18 @@
+site_name: OSPSD-Spring-26 Documentation
+site_description: Provider-agnostic cloud storage client with Google Cloud Storage implementation
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.tracking
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+nav:
+  - Home: index.md
+  - Contributing: CONTRIBUTING.md
+  - Testing: testing.md
+  - Architecture & Design: design.md
+  - Project Structure: structure.md
+  - CircleCI Setup: circleci-setup.md
