@@ -5,6 +5,8 @@ from cloud_storage_client_api.di import register_get_client
 
 from gcp_client_impl.client import GCPCloudStorageClient
 
+__all__ = ["GCPCloudStorageClient"]
+
 
 def _make_gcp_client() -> CloudStorageClient:
     """Factory that creates and returns a GCPCloudStorageClient."""
