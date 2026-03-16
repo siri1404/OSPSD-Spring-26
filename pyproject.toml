@@ -19,10 +19,16 @@ dev = [
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-mock>=3.10.0",
+    "pytest-asyncio>=0.23.0",
     "ruff>=0.12.7",
     "types-requests>=2.32.4.20250611",
     "google-cloud-storage>=2.10.0",
     "google-api-python-client-stubs>=1.30.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.7",
+    "httpx>=0.26.0",
+    "pydantic>=2.6.0",
 ]
 
 # ============================================
@@ -34,6 +40,7 @@ members = ["components/*"]
 [tool.uv.sources]
 cloud_storage_client_api = { workspace = true }
 gcp-client-impl = { workspace = true }
+cloud-storage-service = { workspace = true }
 
 # ============================================
 # RUFF CONFIGURATION
@@ -50,6 +57,8 @@ ignore = [
     "D213",    # multi-line-summary-second-line - Conflicts with D212
     "COM812",  # missing-trailing-comma - Conflicts with formatter
     "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
+    "FAST002", # FastAPI dependency injection pattern - intentional
+    "B008",    # FastAPI dependency injection pattern - intentional
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -91,10 +100,24 @@ ignore = [
     "PLW0108",  # lambda in tests - acceptable
     "TC003",    # Generator needed at runtime for pytest fixtures
     "F401",     # Can have unused imports in TYPE_CHECKING
+    "DTZ005",   # datetime without timezone - test mocks
+    "FURB162",  # timezone replacement - test code
 ]
 
 "**/gcp_client_impl/**/*.py" = [
     "ANN401",   # Any typing - necessary for external Google Cloud library objects without complete stubs
+]
+
+"**/cloud_storage_service/**/*.py" = [
+    "ANN401",   # Any typing - necessary for FastAPI request/response objects
+    "PLC0415",  # import inside function - intentional for performance/circular imports
+    "E402",     # module import not at top - intentional after env setup
+    "S105",     # possible hardcoded password - false positive for URLs/constants
+    "ARG001",   # unused function argument - FastAPI exception handler signature
+    "TRY301",   # abstract raise - FastAPI error handling pattern
+    "PLR2004",  # magic value in comparison - HTTP status codes
+    "DTZ005",   # datetime without timezone - acceptable for API responses
+    "TC003",    # move into type-checking block - runtime usage in Pydantic
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -114,6 +137,7 @@ ignore_missing_imports = false
 mypy_path = [
     "components/cloud_storage_client_api/src",
     "components/gcp_client_impl/src",
+    "components/cloud_storage_service/src",
 ]
 
 # Google Cloud libraries: google-api-python-client-stubs is installed for googleapiclient
@@ -138,6 +162,7 @@ pythonpath = [
     ".",
     "components/cloud_storage_client_api/src",
     "components/gcp_client_impl/src",
+    "components/cloud_storage_service/src",
 ]
 testpaths = ["tests", "components/*/tests"]
 python_files = ["test_*.py"]
