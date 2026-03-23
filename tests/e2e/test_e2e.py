@@ -71,6 +71,18 @@ def test_main_script_syntax_is_valid() -> None:
 def test_main_script_imports_work() -> None:
     """Verify both packages import cleanly from the workspace root."""
     main_script = Path(__file__).parent.parent.parent / "main.py"
+    workspace_root = main_script.parent
+
+    # Set PYTHONPATH to include component source paths
+    env = os.environ.copy()
+    pythonpath_parts = [
+        str(workspace_root / "components" / "cloud_storage_client_api" / "src"),
+        str(workspace_root / "components" / "gcp_client_impl" / "src"),
+        str(workspace_root / "components" / "cloud_storage_adapter" / "src"),
+        str(workspace_root / "components" / "cloud_storage_service" / "src"),
+        str(workspace_root / "components" / "cloud_storage_service_api_client"),
+    ]
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
 
     import_check = "import gcp_client_impl\nimport cloud_storage_client_api\nprint('All imports successful')\n"
 
@@ -80,7 +92,8 @@ def test_main_script_imports_work() -> None:
         text=True,
         timeout=30,
         check=False,
-        cwd=str(main_script.parent),
+        cwd=str(workspace_root),
+        env=env,
     )
     if result.returncode != 0:
         pytest.fail(f"Import check failed:\n{result.stderr}")
