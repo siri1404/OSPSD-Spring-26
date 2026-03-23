@@ -471,6 +471,7 @@ dependencies = [
     { name = "cloud-storage-client-api" },
     { name = "google-auth" },
     { name = "google-cloud-storage" },
+    { name = "python-dotenv" },
 ]
 
 [package.metadata]
@@ -478,6 +479,7 @@ requires-dist = [
     { name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" },
     { name = "google-auth", specifier = ">=2.0.0" },
     { name = "google-cloud-storage", specifier = ">=2.10.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 
 [[package]]
