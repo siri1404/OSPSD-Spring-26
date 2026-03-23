@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 from datetime import datetime
 from pathlib import Path
@@ -43,13 +44,16 @@ app = FastAPI(
 active_sessions: dict[str, str] = {}
 
 
-def get_storage_client() -> GCPCloudStorageClient:
+def get_storage_client(token: Annotated[str, Depends(verify_token)]) -> GCPCloudStorageClient:
     """Get GCP Cloud Storage client instance.
 
     Returns:
         Configured GCPCloudStorageClient instance.
     """
-    return GCPCloudStorageClient()
+    dev_token = os.environ.get("DEV_ACCESS_TOKEN", "dev-token-test")
+    if token == dev_token:
+        return GCPCloudStorageClient()
+    return GCPCloudStorageClient(oauth_token=token)
 
 
 def object_info_to_response(obj: Any) -> ObjectInfoResponse:

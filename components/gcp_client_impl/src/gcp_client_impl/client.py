@@ -17,10 +17,12 @@ from cloud_storage_client_api import CloudStorageClient, ObjectInfo
 
 try:
     from google.cloud import storage
+    from google.oauth2 import credentials as oauth2_credentials
     from google.oauth2 import service_account
 except ImportError:  # pragma: no cover - handled by runtime guard
     storage = None
     service_account = None  # type: ignore[assignment]
+    oauth2_credentials = None # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class GCPClientConfig:
     project_id: str | None
     credentials_path: str | None
     service_key: str | None
+    oauth_token: str | None
 
 
 class GCPCloudStorageClient(CloudStorageClient):
@@ -46,6 +49,7 @@ class GCPCloudStorageClient(CloudStorageClient):
         bucket_name: str | None = None,
         project_id: str | None = None,
         credentials_path: str | None = None,
+        oauth_token: str | None = None
     ) -> None:
         """Initialize the GCP Cloud Storage client.
 
@@ -53,12 +57,15 @@ class GCPCloudStorageClient(CloudStorageClient):
             bucket_name: GCS bucket name (defaults to GCS_BUCKET_NAME env var).
             project_id: GCP project ID (defaults to GOOGLE_CLOUD_PROJECT env var).
             credentials_path: Path to service account key file (defaults to GOOGLE_APPLICATION_CREDENTIALS env var).
+            oauth_token: OAuth 2.0 access token for user-delegated authentication.
+            Takes priority over service account credentials.
         """
         self._config = GCPClientConfig(
             bucket_name=bucket_name or os.getenv("GCS_BUCKET_NAME"),
             project_id=project_id or os.getenv("GOOGLE_CLOUD_PROJECT"),
             credentials_path=credentials_path or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
             service_key=os.getenv("GCP_SERVICE_KEY"),
+            oauth_token=oauth_token or os.getenv("GCP_OAUTH_TOKEN"),
         )
         self._storage_client: Any | None = None
 
@@ -68,6 +75,12 @@ class GCPCloudStorageClient(CloudStorageClient):
             raise RuntimeError(msg)
 
     def _build_credentials(self) -> Any | None:
+        if self._config.oauth_token:
+            if oauth2_credentials is None:
+                msg = "google-auth is not installed, cannot build OAuth credentials."
+                raise RuntimeError(msg)
+            return oauth2_credentials.Credentials(token=self._config.oauth_token) # type: ignore[no-untyped-call]
+
         if self._config.credentials_path:
             return None
 
