@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: cloud-storage-service
+    env: docker
+    plan: free
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    numInstances: 1
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: GCP_SERVICE_KEY
+        sync: false
+      - key: GCS_BUCKET_NAME
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        value: https://cloud-storage-service.onrender.com/auth/callback
+      - key: DEV_AUTH_TOKEN
+        value: dev-token-12345
+      - key: DEV_ACCESS_TOKEN
+        value: dev-token-12345

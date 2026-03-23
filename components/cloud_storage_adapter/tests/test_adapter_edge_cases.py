@@ -64,11 +64,13 @@ class TestAdapterMetadataEdgeCases:
         response = ObjectInfoResponse(
             key="file.txt",
             size_bytes=100,
-            metadata=ObjectInfoResponseMetadataType0.from_dict({
-                "author": "José García",
-                "tags": "a,b,c",
-                "path": "folder/subfolder/file.txt",
-            }),
+            metadata=ObjectInfoResponseMetadataType0.from_dict(
+                {
+                    "author": "José García",
+                    "tags": "a,b,c",
+                    "path": "folder/subfolder/file.txt",
+                }
+            ),
         )
 
         result = CloudStorageAdapter._to_object_info(response)

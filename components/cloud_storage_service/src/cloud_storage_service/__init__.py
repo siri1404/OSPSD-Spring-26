@@ -1,5 +1,6 @@
 """Cloud Storage Service - FastAPI service for cloud storage operations."""
 
-from cloud_storage_service.main import app
+# Use relative import so packaging works regardless of PYTHONPATH configuration.
+from .main import app
 
 __all__ = ["app"]

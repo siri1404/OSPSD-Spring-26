@@ -1,6 +1,9 @@
 # OSPSD Spring '26 - Cloud Storage Client
 
-**Vertical:** Cloud Storage
+[![CircleCI](https://circleci.com/gh/siri1404/OSPSD-Spring-26.svg?branch=hw-2&style=svg)](https://circleci.com/gh/siri1404/OSPSD-Spring-26/tree/hw-2)
+
+**Coverage:** See CircleCI artifacts for latest HTML report  
+**Python Code style:** ruff
 
 ## Team Members
 
@@ -324,6 +327,59 @@ To add support for AWS, Azure, or another provider:
 6. Use in code: `from cloud_storage_client_api import get_client; client = get_client(name="aws")`
 
 See the GCP implementation as a template.
+
+---
+
+## Deployment & Verification
+
+### Platform
+- **Render** (Docker-based, see `render.yaml`)
+- **Live URL:** https://cloud-storage-service-mcni.onrender.com
+
+### Required Environment Variables
+| Variable | Purpose |
+| --- | --- |
+| `GCP_SERVICE_KEY` | Base64-encoded GCP service-account JSON used by the storage client |
+| `GCS_BUCKET_NAME` | Target bucket for uploads/downloads |
+| `GOOGLE_CLOUD_PROJECT` | GCP project that owns the bucket |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth credentials for browser auth flows |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Redirect URL Render should call after auth (defaults to the hosted `/auth/callback`) |
+| `DEV_AUTH_TOKEN` / `DEV_ACCESS_TOKEN` | Static bearer tokens for local and smoke testing |
+| `RENDER_API_KEY` | (CircleCI only) Render Personal Access Token with deploy scope |
+| `RENDER_SERVICE_ID` | (CircleCI only) ID of the Render web service |
+| `RENDER_SERVICE_URL` | (CircleCI only) Base URL for smoke test (e.g., https://cloud-storage-service-mcni.onrender.com) |
+
+### CI/CD Pipeline (CircleCI)
+- On every push to `hw-2`:
+  - Build, lint, typecheck, unit/integration/e2e test
+  - Deploys to Render using API
+  - Verifies `/health` endpoint
+- See `.circleci/config.yml` and [docs/circleci-setup.md](docs/circleci-setup.md) for details.
+
+### Manual API Verification
+After deployment, you can verify the service is working with these commands:
+
+```bash
+# Health check (should return HTTP 200 and JSON)
+curl -i https://cloud-storage-service-mcni.onrender.com/health
+
+# Upload a file
+curl -X POST https://cloud-storage-service-mcni.onrender.com/upload \
+  -H "Authorization: Bearer dev-token-12345" \
+  -F key=e2e-manual/sample.txt \
+  -F content_type=text/plain \
+  -F file=@sample.txt
+
+# Download the file
+curl -H "Authorization: Bearer dev-token-12345" \
+  https://cloud-storage-service-mcni.onrender.com/download/e2e-manual/sample.txt
+
+# Delete the file
+curl -X DELETE https://cloud-storage-service-mcni.onrender.com/delete/e2e-manual/sample.txt \
+  -H "Authorization: Bearer dev-token-12345"
+```
+
+Replace `dev-token-12345` with your configured test token if needed.
 
 ---
 
