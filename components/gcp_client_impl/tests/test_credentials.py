@@ -38,6 +38,7 @@ class TestBuildCredentials:
         with patch("gcp_client_impl.client.service_account"), pytest.raises(RuntimeError, match="GCP_SERVICE_KEY"):
             GCPCloudStorageClient(bucket_name="b")._build_credentials()
 
+
 def _make_client(
     *,
     oauth_token: str | None = None,
@@ -55,6 +56,7 @@ def _make_client(
     )
     client._storage_client = None
     return client
+
 
 # OAuth 2.0 token tests
 @pytest.mark.unit
@@ -112,7 +114,8 @@ class TestOAuthTokenCredentials:
 
         with (
             patch("gcp_client_impl.client.oauth2_credentials", None),
-            pytest.raises(RuntimeError, match="google-auth is not installed")):
+            pytest.raises(RuntimeError, match="google-auth is not installed"),
+        ):
             client._build_credentials()
 
     def test_empty_oauth_token_falls_through_to_service_key(self) -> None:
@@ -125,7 +128,6 @@ class TestOAuthTokenCredentials:
 
         mock_module.Credentials.assert_not_called()
         assert result is None
-
 
 
 # OAuth token passed through __init__
@@ -156,6 +158,7 @@ class TestOAuthTokenInit:
         with patch.dict(os.environ, {"GCP_OAUTH_TOKEN": "ya29.from-env"}, clear=True):
             client = GCPCloudStorageClient(oauth_token="ya29.explicit")
         assert client._config.oauth_token == "ya29.explicit"
+
 
 # Storage client construction with OAuth token
 @pytest.mark.unit

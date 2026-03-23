@@ -22,7 +22,7 @@ try:
 except ImportError:  # pragma: no cover - handled by runtime guard
     storage = None
     service_account = None  # type: ignore[assignment]
-    oauth2_credentials = None # type: ignore[assignment]
+    oauth2_credentials = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,7 @@ class GCPCloudStorageClient(CloudStorageClient):
         bucket_name: str | None = None,
         project_id: str | None = None,
         credentials_path: str | None = None,
-        oauth_token: str | None = None
+        oauth_token: str | None = None,
     ) -> None:
         """Initialize the GCP Cloud Storage client.
 
@@ -79,7 +79,7 @@ class GCPCloudStorageClient(CloudStorageClient):
             if oauth2_credentials is None:
                 msg = "google-auth is not installed, cannot build OAuth credentials."
                 raise RuntimeError(msg)
-            return oauth2_credentials.Credentials(token=self._config.oauth_token) # type: ignore[no-untyped-call]
+            return oauth2_credentials.Credentials(token=self._config.oauth_token)  # type: ignore[no-untyped-call]
 
         if self._config.credentials_path:
             return None
