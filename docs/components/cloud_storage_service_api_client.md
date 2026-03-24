@@ -1,24 +1,25 @@
-# Cloud Storage Service API Client
+# syntax=docker/dockerfile:1
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-This package is a Python client for talking to the Cloud Storage Service REST API (the FastAPI backend in this repo). It lets you call the API from Python code instead of using curl.
+WORKDIR /app
 
-## What does this do?
-- Lets you create a `Client` or `AuthenticatedClient` for the API
-- Provides models and functions for each endpoint (auto-generated)
-- Supports both sync and async usage
+# Copy workspace metadata first for better layer caching
+COPY pyproject.toml uv.lock ./
+COPY components components
+COPY main.py openapi.json README.md ./
 
-## How to use
-```python
-from cloud_storage_service_api_client import AuthenticatedClient
+# --all-packages: installs every workspace member and all transitive deps.
+# --no-editable: copies packages into .venv/site-packages as real installs,
+#   not editable path references (required for containers).
+# No changes to pyproject.toml needed — adding a new component just requires
+# dropping it in components/ and running `uv lock`.
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+RUN uv sync --frozen --no-dev --no-editable --all-packages
 
-client = AuthenticatedClient(base_url="https://cloud-storage-service-mcni.onrender.com", token="dev-token-12345")
+ENV PORT=8000
+EXPOSE 8000
 
-# Example: download a file
-from cloud_storage_service_api_client.api.storage import download_file
-response = download_file.sync(client=client, key="test.txt")
-print(response.content)
-```
+# Use venv directly — avoids uv run re-resolving dependencies at startup
+ENV PATH="/app/.venv/bin:$PATH"
 
-## Notes
-- This is a student project. The client is auto-generated from the OpenAPI spec, so check the FastAPI docs for details.
-- For more info, see the root README and the FastAPI service docs.
+CMD ["python", "-m", "uvicorn", "cloud_storage_service.main:app", "--host", "0.0.0.0", "--port", "8000"]

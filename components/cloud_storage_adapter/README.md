@@ -13,6 +13,10 @@ This is an HTTP adapter that lets you use the `CloudStorageClient` interface to 
 from cloud_storage_adapter import CloudStorageAdapter
 
 adapter = CloudStorageAdapter(
+    base_url="https://cloud-storage-service-mcni.onrender.com",  # or your deployed service URL
+    token="dev-token-12345",           # Bearer token for auth
+)
+adapter = CloudStorageAdapter(
     base_url="http://localhost:8000",  # or your deployed service URL
     token="dev-token-12345",           # Bearer token for auth
 )

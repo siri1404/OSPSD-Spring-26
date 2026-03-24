@@ -1,9 +1,12 @@
 # OSPSD Spring '26 - Cloud Storage Client
 
-[![CircleCI](https://circleci.com/gh/siri1404/OSPSD-Spring-26.svg?branch=hw-2&style=svg)](https://circleci.com/gh/siri1404/OSPSD-Spring-26/tree/hw-2)
 
-**Coverage:** See CircleCI artifacts for latest HTML report  
-**Python Code style:** ruff
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/siri1404/OSPSD-Spring-26/tree/hw-2.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/siri1404/OSPSD-Spring-26/tree/hw-2)
+![Coverage](https://img.shields.io/badge/coverage-85%25%2B-brightgreen)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-brightgreen)
+
+
 
 ## Team Members
 
@@ -29,7 +32,7 @@ The project demonstrates clean architectural patterns through:
 
 ## Architecture Overview
 
-This repository contains a **two-component design**:
+This repository contains a **five-component architecture** following clean dependency injection principles:
 
 ### Component 1: `cloud_storage_client_api` (Interface)
 
@@ -58,6 +61,38 @@ Google Cloud Storage implementation of the abstract interface.
 - Configuration via environment variables with constructor argument overrides
 - Comprehensive error handling with clear messages
 - Auto-registration on import — no manual wiring required
+
+### Component 3: `cloud_storage_adapter` (HTTP Adapter)
+
+HTTP wrapper implementing `CloudStorageClient` by proxying requests to the cloud storage service via OpenAPI client.
+
+**Key Features:**
+- Wraps service endpoints as CloudStorageClient operations
+- Type-safe async HTTP communication with generated OpenAPI client
+- Proper HTTP status code handling (200, 204, 404, 400, 500, 507)
+- Metadata extraction from response headers
+- Configurable service base URL (default: local service)
+
+### Component 4: `cloud_storage_service` (FastAPI Service)
+
+FastAPI microservice exposing cloud storage operations via REST endpoints with OAuth 2.0 authentication.
+
+**Key Features:**
+- 8 REST endpoints: login, callback, upload, download, list, delete, head, health
+- OAuth 2.0 authentication flow with state management
+- Bearer token validation with dev token bypass for testing
+- Multi-provider support (GCP, adapter, etc.) via DI
+- Pydantic models for request/response validation
+
+### Component 5: `cloud_storage_service_api_client` (Generated API Client)
+
+Type-safe OpenAPI-generated async HTTP client for the cloud storage service.
+
+**Key Features:**
+- Auto-generated from service OpenAPI schema
+- Pydantic models for all operations
+- Async/await support for non-blocking I/O
+- Used by cloud_storage_adapter to communicate with service
 
 ---
 
@@ -281,7 +316,7 @@ Full documentation is available in the `docs/` directory:
 
 ## CI/CD Pipeline
 
-CircleCI continuously validates code on the `hw-1` branch:
+CircleCI continuously validates code on the `hw-2` branch:
 
 - Build: Environment setup with `uv`
 - Lint: Code style checking with `ruff`
@@ -333,8 +368,7 @@ See the GCP implementation as a template.
 ## Deployment & Verification
 
 ### Platform
-- **Render** (Docker-based, see `render.yaml`)
-- **Live URL:** https://cloud-storage-service-mcni.onrender.com
+ - **Live URL:** https://cloud-storage-service-mcni.onrender.com
 
 ### Required Environment Variables
 | Variable | Purpose |

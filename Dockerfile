@@ -8,11 +8,7 @@ COPY pyproject.toml uv.lock ./
 COPY components components
 COPY main.py openapi.json README.md ./
 
-# --all-packages: installs every workspace member and all transitive deps.
-# --no-editable: copies packages into .venv/site-packages as real installs,
-#   not editable path references (required for containers).
-# No changes to pyproject.toml needed — adding a new component just requires
-# dropping it in components/ and running `uv lock`.
+
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 RUN uv sync --frozen --no-dev --no-editable --all-packages
 
