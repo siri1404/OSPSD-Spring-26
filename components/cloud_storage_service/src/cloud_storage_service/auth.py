@@ -117,8 +117,9 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
 
     # DEVELOPMENT MODE: Allow special dev token for local testing
     # This bypasses OAuth when you can't complete the OAuth flow
-    dev_token = os.getenv("DEV_AUTH_TOKEN", "dev-token-12345")
-    if token == dev_token:
+    # SECURITY: Only works if DEV_AUTH_TOKEN is explicitly set (no default)
+    dev_token = os.getenv("DEV_AUTH_TOKEN")
+    if dev_token and token == dev_token:
         return token
 
     # In a production system, you would verify the token with Google's token info endpoint

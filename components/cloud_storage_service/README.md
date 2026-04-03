@@ -18,34 +18,37 @@ This is a RESTful API for cloud storage operations, built with FastAPI and desig
 
 ## Example usage (with curl)
 
+**Note:** For local testing, set `DEV_AUTH_TOKEN` and `DEV_ACCESS_TOKEN` in your `.env` file first.
+
 ```bash
-# Health check
+# Health check (no auth required)
 curl https://cloud-storage-service-mcni.onrender.com/health
 
-# Upload a file
+# Upload a file (replace YOUR_TOKEN with your dev token or OAuth token)
 curl -X POST https://cloud-storage-service-mcni.onrender.com/upload \
-  -H "Authorization: Bearer dev-token-12345" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -F key=sample.txt \
   -F file=@sample.txt
 
 # Download a file
-curl -H "Authorization: Bearer dev-token-12345" \
+curl -H "Authorization: Bearer YOUR_TOKEN" \
   https://cloud-storage-service-mcni.onrender.com/download/sample.txt
 
 # List files
-curl -H "Authorization: Bearer dev-token-12345" \
+curl -H "Authorization: Bearer YOUR_TOKEN" \
   https://cloud-storage-service-mcni.onrender.com/list
 
 # Delete a file
 curl -X DELETE https://cloud-storage-service-mcni.onrender.com/delete/sample.txt \
-  -H "Authorization: Bearer dev-token-12345"
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ## Environment variables
 - `GCS_BUCKET_NAME` (required): Your GCS bucket name
 - `GOOGLE_CLOUD_PROJECT`: GCP project ID
 - `GOOGLE_APPLICATION_CREDENTIALS` or `GCP_SERVICE_KEY`: Service account credentials
-- `DEV_ACCESS_TOKEN`: Token for local/dev testing (default: `dev-token-test`)
+- `DEV_AUTH_TOKEN`: Token for bypassing OAuth in local/dev testing (must be explicitly set, no default)
+- `DEV_ACCESS_TOKEN`: Token for bypassing OAuth in local/dev testing (must be explicitly set, no default)
 
 ## Running locally
 1. Install dependencies (see root README)

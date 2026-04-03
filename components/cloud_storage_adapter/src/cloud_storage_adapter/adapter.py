@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
@@ -35,13 +36,16 @@ class CloudStorageAdapter(CloudStorageClient):
     def upload_file(self, *, local_path: str, key: str, content_type: str | None = None) -> ObjectInfo:
         """Upload a local file through the service-backed adapter."""
         try:
-            file_text = Path(local_path).read_bytes().decode("latin-1")
+            file_bytes = Path(local_path).read_bytes()
         except OSError as exc:
             msg = f"Local file not found: {local_path}"
             raise FileNotFoundError(msg) from exc
 
+        # Encode bytes as base64 to safely transmit binary data as string
+        file_base64 = base64.b64encode(file_bytes).decode("ascii")
+
         body = BodyUploadFileUploadPost(
-            file=file_text,
+            file=file_base64,
             key=key,
             content_type=content_type if content_type is not None else UNSET,
         )
@@ -64,8 +68,11 @@ class CloudStorageAdapter(CloudStorageClient):
         metadata: Mapping[str, str] | None = None,
     ) -> ObjectInfo:
         """Upload raw bytes through the service-backed adapter."""
+        # Encode bytes as base64 to safely transmit binary data as string
+        file_base64 = base64.b64encode(data).decode("ascii")
+
         body = BodyUploadFileUploadPost(
-            file=data.decode("latin-1"),
+            file=file_base64,
             key=key,
             content_type=content_type if content_type is not None else UNSET,
         )

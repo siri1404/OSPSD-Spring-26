@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import secrets
 from datetime import datetime
@@ -50,8 +51,9 @@ def get_storage_client(token: Annotated[str, Depends(verify_token)]) -> GCPCloud
     Returns:
         Configured GCPCloudStorageClient instance.
     """
-    dev_token = os.environ.get("DEV_ACCESS_TOKEN", "dev-token-test")
-    if token == dev_token:
+    # SECURITY: Only use dev token if explicitly configured (no default)
+    dev_token = os.environ.get("DEV_ACCESS_TOKEN")
+    if dev_token and token == dev_token:
         return GCPCloudStorageClient()
     return GCPCloudStorageClient(oauth_token=token)
 
@@ -196,12 +198,20 @@ async def upload_file(
         # Read file contents
         file_contents = await file.read()
 
+        # Try to decode from base64 if the adapter sent base64-encoded data
+        # This supports binary files that were base64-encoded by the adapter
+        try:
+            file_bytes = base64.b64decode(file_contents)
+        except Exception:
+            # If base64 decoding fails, assume raw bytes were sent
+            file_bytes = file_contents
+
         # Use content_type from form if provided, otherwise use file's content_type
         final_content_type = content_type or file.content_type
 
         # Upload to GCS
         object_info = client.upload_bytes(
-            data=file_contents,
+            data=file_bytes,
             key=key,
             content_type=final_content_type,
         )

@@ -43,6 +43,8 @@ class TestCloudStorageAdapter:
     """Behavioral tests for generated-client adapter mapping and handling."""
 
     def test_upload_bytes_returns_object_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import base64
+
         obj = _mk_object_info_response(metadata={"owner": "team6"})
         captured_body: dict[str, object] = {}
 
@@ -64,7 +66,8 @@ class TestCloudStorageAdapter:
         info = adapter.upload_bytes(data=b"test", key="k.txt", content_type="text/plain")
 
         assert captured_body["key"] == "k.txt"
-        assert captured_body["file"] == "test"
+        # File should be base64-encoded to handle binary data
+        assert captured_body["file"] == base64.b64encode(b"test").decode("ascii")
         assert info.key == "k.txt"
         assert info.size_bytes == 4
         assert info.etag == "e1"
@@ -335,3 +338,80 @@ class TestCloudStorageAdapter:
     def test_raise_validation_or_runtime_generic_branch(self) -> None:
         with pytest.raises(RuntimeError, match="list failed with status 500"):
             CloudStorageAdapter._raise_validation_or_runtime("list", object(), 500)
+
+    def test_upload_bytes_with_binary_data_uses_base64(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Regression test: binary data (non-UTF8 bytes) should be base64-encoded, not decoded as latin-1."""
+        import base64
+
+        # Binary data that would corrupt if decoded as latin-1
+        binary_data = b"\x00\x01\x02\xFF\xFE\xFD\x80\x81\x82"
+        obj = _mk_object_info_response(key="binary.bin")
+        captured_body: dict[str, object] = {}
+
+        def _capture_upload(*, client: object, body: object) -> Response[ObjectInfoResponse]:  # noqa: ARG001
+            captured_body["file"] = body.file  # type: ignore[union-attr]
+            return Response(
+                status_code=HTTPStatus.OK,
+                content=b"",
+                headers={},
+                parsed=obj,
+            )
+
+        monkeypatch.setattr(
+            "cloud_storage_adapter.adapter.upload_file_upload_post.sync_detailed",
+            _capture_upload,
+        )
+
+        adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
+        result = adapter.upload_bytes(data=binary_data, key="binary.bin")
+
+        # Verify the uploaded file was base64-encoded
+        assert result.key == "binary.bin"
+        uploaded_str = captured_body["file"]
+        assert isinstance(uploaded_str, str)
+
+        # Decode back and verify it matches original binary data
+        decoded_bytes = base64.b64decode(uploaded_str)
+        assert decoded_bytes == binary_data
+
+    def test_upload_file_with_binary_content_uses_base64(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Regression test: binary file uploads should be base64-encoded to preserve data integrity."""
+        import base64
+
+        # Create a temporary binary file with non-UTF8 bytes
+        binary_data = b"\x00\xFF\xFE\x01\x02\x03\x80\x81\x82\x83"
+        temp_file = tmp_path / "binary_test.dat"
+        temp_file.write_bytes(binary_data)
+
+        obj = _mk_object_info_response(key="uploaded.dat")
+        captured_body: dict[str, object] = {}
+
+        def _capture_upload(*, client: object, body: object) -> Response[ObjectInfoResponse]:  # noqa: ARG001
+            captured_body["file"] = body.file  # type: ignore[union-attr]
+            return Response(
+                status_code=HTTPStatus.OK,
+                content=b"",
+                headers={},
+                parsed=obj,
+            )
+
+        monkeypatch.setattr(
+            "cloud_storage_adapter.adapter.upload_file_upload_post.sync_detailed",
+            _capture_upload,
+        )
+
+        adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
+        result = adapter.upload_file(local_path=str(temp_file), key="uploaded.dat")
+
+        # Verify the result
+        assert result.key == "uploaded.dat"
+
+        # Verify the file was base64-encoded
+        uploaded_str = captured_body["file"]
+        assert isinstance(uploaded_str, str)
+
+        # Decode and verify integrity
+        decoded_bytes = base64.b64decode(uploaded_str)
+        assert decoded_bytes == binary_data
