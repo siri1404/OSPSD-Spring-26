@@ -23,12 +23,9 @@ import gcp_client_impl
 import httpx
 import pytest
 from cloud_storage_client_api.di import get_client
-from cloud_storage_service_api_client import (
-    AuthenticatedClient,
-)
-from cloud_storage_service_api_client import (
-    Client as ServiceApiClient,
-)
+from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageOperationError
+from cloud_storage_service_api_client import AuthenticatedClient
+from cloud_storage_service_api_client import Client as ServiceApiClient
 from cloud_storage_service_api_client.api.authentication import oauth_login_auth_login_post
 from cloud_storage_service_api_client.api.storage import (
     delete_object_delete_key_delete,
@@ -37,13 +34,9 @@ from cloud_storage_service_api_client.api.storage import (
     list_objects_list_get,
     upload_file_upload_post,
 )
-from cloud_storage_service_api_client.models.body_upload_file_upload_post import (
-    BodyUploadFileUploadPost,
-)
+from cloud_storage_service_api_client.models.body_upload_file_upload_post import BodyUploadFileUploadPost
 from cloud_storage_service_api_client.models.list_response import ListResponse
-from cloud_storage_service_api_client.models.object_info_response import (
-    ObjectInfoResponse,
-)
+from cloud_storage_service_api_client.models.object_info_response import ObjectInfoResponse
 
 RUN_E2E_TESTS = os.environ.get("RUN_E2E_TESTS", "false").lower() == "true"
 RUNNING_IN_CI = os.environ.get("CI") is not None
@@ -149,7 +142,7 @@ def service_runtime() -> Iterator[dict[str, str]]:
         str(port),
     ]
 
-    process = subprocess.Popen(  # noqa: S603
+    process = subprocess.Popen(
         command,
         cwd=str(repo_root),
         env=env,
@@ -190,7 +183,7 @@ def test_main_script_syntax_is_valid() -> None:
     if not main_script.exists():
         pytest.skip(f"main.py not found at {main_script}")
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [sys.executable, "-m", "py_compile", str(main_script)],
         capture_output=True,
         text=True,
@@ -221,7 +214,7 @@ def test_main_script_imports_work() -> None:
 
     import_check = "import gcp_client_impl\nimport cloud_storage_client_api\nprint('All imports successful')\n"
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [sys.executable, "-c", import_check],
         capture_output=True,
         text=True,
@@ -280,7 +273,7 @@ def test_client_raises_without_bucket_env_var() -> None:
     }
     with patch.dict(os.environ, env_patch, clear=False):
         client = GCPCloudStorageClient()
-        with pytest.raises(RuntimeError, match="GCS bucket is not configured"):
+        with pytest.raises(StorageOperationError, match="GCS bucket is not configured"):
             client._get_bucket_name()
 
 
@@ -297,7 +290,7 @@ def test_client_raises_with_malformed_service_key() -> None:
     }
     with patch.dict(os.environ, env_patch, clear=False):
         client = GCPCloudStorageClient()
-        with pytest.raises(RuntimeError, match="GCP_SERVICE_KEY must be a valid JSON"):
+        with pytest.raises(StorageOperationError, match="GCP_SERVICE_KEY must be a valid JSON"):
             client._build_credentials()
 
 
@@ -347,7 +340,7 @@ def test_full_workflow_with_env_var_credentials() -> None:
 
     finally:
         # 5. Delete — always runs even if assertions fail
-        with contextlib.suppress(FileNotFoundError):
+        with contextlib.suppress(ObjectNotFoundError):
             client.delete(key=key)
 
     # 6. Confirm deletion
@@ -388,7 +381,7 @@ def test_full_workflow_with_local_credentials() -> None:
         assert any(o.key == key for o in objects)
 
     finally:
-        with contextlib.suppress(FileNotFoundError):
+        with contextlib.suppress(ObjectNotFoundError):
             client.delete(key=key)
 
     assert client.head(key=key) is None
@@ -424,7 +417,7 @@ def test_upload_file_workflow_with_local_credentials(tmp_path: Path) -> None:
         assert downloaded == payload
 
     finally:
-        with contextlib.suppress(FileNotFoundError):
+        with contextlib.suppress(ObjectNotFoundError):
             client.delete(key=key)
 
 
@@ -457,7 +450,7 @@ def test_upload_with_custom_metadata() -> None:
             assert head_info.metadata.get(k) == v
 
     finally:
-        with contextlib.suppress(FileNotFoundError):
+        with contextlib.suppress(ObjectNotFoundError):
             client.delete(key=key)
 
 
@@ -472,7 +465,7 @@ def test_download_nonexistent_object_raises() -> None:
     client = GCPCloudStorageClient()
     ghost_key = unique_key("e2e-ghost")
 
-    with pytest.raises(FileNotFoundError, match=ghost_key):
+    with pytest.raises(ObjectNotFoundError, match=ghost_key):
         client.download_bytes(key=ghost_key)
 
 
@@ -487,7 +480,7 @@ def test_delete_nonexistent_object_raises() -> None:
     client = GCPCloudStorageClient()
     ghost_key = unique_key("e2e-ghost-delete")
 
-    with pytest.raises(FileNotFoundError, match=ghost_key):
+    with pytest.raises(ObjectNotFoundError, match=ghost_key):
         client.delete(key=ghost_key)
 
 
@@ -519,7 +512,7 @@ def test_main_script_runs_with_env_var_credentials() -> None:
         pytest.skip("GCP_SERVICE_KEY / GCS_BUCKET_NAME / GOOGLE_CLOUD_PROJECT not set.")
 
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             [sys.executable, str(main_script)],
             capture_output=True,
             text=True,
@@ -553,7 +546,7 @@ def test_main_script_runs_with_local_credentials() -> None:
         pytest.skip("GCS_BUCKET_NAME not set.")
 
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             [sys.executable, str(main_script)],
             capture_output=True,
             text=True,

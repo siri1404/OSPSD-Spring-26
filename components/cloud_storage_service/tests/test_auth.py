@@ -89,7 +89,10 @@ async def test_callback_endpoint_with_valid_code() -> None:
             callback_data = callback_response.json()
 
             assert "access_token" in callback_data
-            assert callback_data["access_token"] == "test-access-token"
+            # Verify it's a different token than the provider token (should be opaque session token)
+            assert callback_data["access_token"] != "test-access-token"
+            # Verify it's a valid opaque token (not empty, reasonable length)
+            assert len(callback_data["access_token"]) > 20
             assert callback_data["token_type"] == "bearer"
 
 

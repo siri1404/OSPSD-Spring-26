@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from cloud_storage_adapter import CloudStorageAdapter
+from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageOperationError, StorageValidationError
 from cloud_storage_service_api_client.models import (
     HTTPValidationError,
     ListResponse,
@@ -43,8 +44,6 @@ class TestCloudStorageAdapter:
     """Behavioral tests for generated-client adapter mapping and handling."""
 
     def test_upload_bytes_returns_object_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import base64
-
         obj = _mk_object_info_response(metadata={"owner": "team6"})
         captured_body: dict[str, object] = {}
 
@@ -66,8 +65,8 @@ class TestCloudStorageAdapter:
         info = adapter.upload_bytes(data=b"test", key="k.txt", content_type="text/plain")
 
         assert captured_body["key"] == "k.txt"
-        # File should be base64-encoded to handle binary data
-        assert captured_body["file"] == base64.b64encode(b"test").decode("ascii")
+        # File should be raw bytes for multipart form handling
+        assert captured_body["file"] == b"test"
         assert info.key == "k.txt"
         assert info.size_bytes == 4
         assert info.etag == "e1"
@@ -81,7 +80,7 @@ class TestCloudStorageAdapter:
         )
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.upload_file_upload_post.sync_detailed",
-            lambda *, client, body: Response(  # noqa: ARG005
+            lambda *, client, body: Response(
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
                 content=b"",
                 headers={},
@@ -90,7 +89,7 @@ class TestCloudStorageAdapter:
         )
 
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        with pytest.raises(TypeError, match="upload_bytes request validation failed"):
+        with pytest.raises(StorageValidationError, match="upload_bytes request validation failed"):
             adapter.upload_bytes(data=b"bad", key="bad.txt")
 
     def test_upload_file_success(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -100,7 +99,7 @@ class TestCloudStorageAdapter:
 
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.upload_file_upload_post.sync_detailed",
-            lambda *, client, body: Response(  # noqa: ARG005
+            lambda *, client, body: Response(
                 status_code=HTTPStatus.OK,
                 content=b"",
                 headers={},
@@ -115,7 +114,7 @@ class TestCloudStorageAdapter:
 
     def test_upload_file_missing_path_raises(self) -> None:
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(ObjectNotFoundError):
             adapter.upload_file(local_path="C:/does-not-exist.txt", key="missing.txt")
 
     def test_upload_file_unexpected_status_raises_runtime(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -124,7 +123,7 @@ class TestCloudStorageAdapter:
 
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.upload_file_upload_post.sync_detailed",
-            lambda *, client, body: Response(  # noqa: ARG005
+            lambda *, client, body: Response(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 content=b"",
                 headers={},
@@ -133,50 +132,58 @@ class TestCloudStorageAdapter:
         )
 
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        with pytest.raises(RuntimeError, match="upload_file failed with status 500"):
+        with pytest.raises(StorageOperationError, match="upload_file failed with status 500"):
             adapter.upload_file(local_path=str(local_file), key="upload/hello.txt")
 
-    def test_download_200_returns_bytes(self) -> None:
+    def test_download_200_returns_bytes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        response = MagicMock()
-        response.status_code = 200
-        response.content = b"downloaded-content"
-        response.text = "ok"
-        httpx_client = MagicMock()
-        httpx_client.request.return_value = response
-        adapter._client.set_httpx_client(httpx_client)
+        monkeypatch.setattr(
+            "cloud_storage_adapter.adapter.download_file_download_key_get.sync_detailed",
+            lambda *, key, client: Response(
+                status_code=HTTPStatus.OK,
+                content=b"downloaded-content",
+                headers={},
+                parsed=None,
+            ),
+        )
 
         payload = adapter.download_bytes(key="folder/file.txt")
         assert payload == b"downloaded-content"
 
-    def test_download_404_raises_file_not_found(self) -> None:
+    def test_download_404_raises_file_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        response = MagicMock()
-        response.status_code = 404
-        response.text = "not found"
-        httpx_client = MagicMock()
-        httpx_client.request.return_value = response
-        adapter._client.set_httpx_client(httpx_client)
+        monkeypatch.setattr(
+            "cloud_storage_adapter.adapter.download_file_download_key_get.sync_detailed",
+            lambda *, key, client: Response(
+                status_code=HTTPStatus.NOT_FOUND,
+                content=b"",
+                headers={},
+                parsed=None,
+            ),
+        )
 
-        with pytest.raises(FileNotFoundError, match=r"missing\.txt"):
+        with pytest.raises(ObjectNotFoundError, match=r"missing\.txt"):
             adapter.download_bytes(key="missing.txt")
 
-    def test_download_non_404_error_raises_runtime(self) -> None:
+    def test_download_non_404_error_raises_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        response = MagicMock()
-        response.status_code = 500
-        response.text = "boom"
-        httpx_client = MagicMock()
-        httpx_client.request.return_value = response
-        adapter._client.set_httpx_client(httpx_client)
+        monkeypatch.setattr(
+            "cloud_storage_adapter.adapter.download_file_download_key_get.sync_detailed",
+            lambda *, key, client: Response(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                content=b"",
+                headers={},
+                parsed=None,
+            ),
+        )
 
-        with pytest.raises(RuntimeError, match="download_bytes failed with status 500"):
+        with pytest.raises(StorageOperationError, match="download_bytes failed with status 500"):
             adapter.download_bytes(key="bad.txt")
 
     def test_head_404_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.head_object_head_key_get.sync_detailed",
-            lambda *, key, client: Response(  # noqa: ARG005
+            lambda *, key, client: Response(
                 status_code=HTTPStatus.NOT_FOUND,
                 content=b"",
                 headers={},
@@ -192,7 +199,7 @@ class TestCloudStorageAdapter:
         obj = _mk_object_info_response(key="head.txt", metadata={"source": "test"})
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.head_object_head_key_get.sync_detailed",
-            lambda *, key, client: Response(  # noqa: ARG005
+            lambda *, key, client: Response(
                 status_code=HTTPStatus.OK,
                 content=b"",
                 headers={},
@@ -213,7 +220,7 @@ class TestCloudStorageAdapter:
         )
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.head_object_head_key_get.sync_detailed",
-            lambda *, key, client: Response(  # noqa: ARG005
+            lambda *, key, client: Response(
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
                 content=b"",
                 headers={},
@@ -222,13 +229,13 @@ class TestCloudStorageAdapter:
         )
 
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        with pytest.raises(TypeError, match="head request validation failed"):
+        with pytest.raises(StorageValidationError, match="head request validation failed"):
             adapter.head(key="bad key")
 
     def test_delete_404_raises_file_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.delete_object_delete_key_delete.sync_detailed",
-            lambda *, key, client: Response(  # noqa: ARG005
+            lambda *, key, client: Response(
                 status_code=HTTPStatus.NOT_FOUND,
                 content=b"",
                 headers={},
@@ -237,13 +244,13 @@ class TestCloudStorageAdapter:
         )
 
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        with pytest.raises(FileNotFoundError, match=r"missing\.txt"):
+        with pytest.raises(ObjectNotFoundError, match=r"missing\.txt"):
             adapter.delete(key="missing.txt")
 
     def test_delete_204_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.delete_object_delete_key_delete.sync_detailed",
-            lambda *, key, client: Response(  # noqa: ARG005
+            lambda *, key, client: Response(
                 status_code=HTTPStatus.NO_CONTENT,
                 content=b"",
                 headers={},
@@ -260,7 +267,7 @@ class TestCloudStorageAdapter:
         )
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.delete_object_delete_key_delete.sync_detailed",
-            lambda *, key, client: Response(  # noqa: ARG005
+            lambda *, key, client: Response(
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
                 content=b"",
                 headers={},
@@ -269,7 +276,7 @@ class TestCloudStorageAdapter:
         )
 
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        with pytest.raises(TypeError, match="delete request validation failed"):
+        with pytest.raises(StorageValidationError, match="delete request validation failed"):
             adapter.delete(key="bad key")
 
     def test_list_maps_objects(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,7 +299,7 @@ class TestCloudStorageAdapter:
 
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.list_objects_list_get.sync_detailed",
-            lambda *, client, prefix: Response(  # noqa: ARG005
+            lambda *, client, prefix: Response(
                 status_code=HTTPStatus.OK,
                 content=b"",
                 headers={},
@@ -312,7 +319,7 @@ class TestCloudStorageAdapter:
         )
         monkeypatch.setattr(
             "cloud_storage_adapter.adapter.list_objects_list_get.sync_detailed",
-            lambda *, client, prefix: Response(  # noqa: ARG005
+            lambda *, client, prefix: Response(
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
                 content=b"",
                 headers={},
@@ -321,7 +328,7 @@ class TestCloudStorageAdapter:
         )
 
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
-        with pytest.raises(TypeError, match="list request validation failed"):
+        with pytest.raises(StorageValidationError, match="list request validation failed"):
             adapter.list(prefix="")
 
     def test_to_object_info_handles_unset_fields(self) -> None:
@@ -336,20 +343,18 @@ class TestCloudStorageAdapter:
         assert mapped.metadata is None
 
     def test_raise_validation_or_runtime_generic_branch(self) -> None:
-        with pytest.raises(RuntimeError, match="list failed with status 500"):
+        with pytest.raises(StorageOperationError, match="list failed with status 500"):
             CloudStorageAdapter._raise_validation_or_runtime("list", object(), 500)
 
-    def test_upload_bytes_with_binary_data_uses_base64(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Regression test: binary data (non-UTF8 bytes) should be base64-encoded, not decoded as latin-1."""
-        import base64
-
-        # Binary data that would corrupt if decoded as latin-1
-        binary_data = b"\x00\x01\x02\xFF\xFE\xFD\x80\x81\x82"
+    def test_upload_bytes_with_non_utf8_binary_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Regression: binary data with invalid UTF-8 bytes must not be corrupted."""
+        # Binary data that spans the full byte range
+        binary_data = bytes(range(256))
         obj = _mk_object_info_response(key="binary.bin")
         captured_body: dict[str, object] = {}
 
-        def _capture_upload(*, client: object, body: object) -> Response[ObjectInfoResponse]:  # noqa: ARG001
-            captured_body["file"] = body.file  # type: ignore[union-attr]
+        def _capture_upload(*, client: object, body: object) -> Response[ObjectInfoResponse]:
+            captured_body["file"] = body.file  # type: ignore[attr-defined]
             return Response(
                 status_code=HTTPStatus.OK,
                 content=b"",
@@ -365,31 +370,22 @@ class TestCloudStorageAdapter:
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
         result = adapter.upload_bytes(data=binary_data, key="binary.bin")
 
-        # Verify the uploaded file was base64-encoded
         assert result.key == "binary.bin"
-        uploaded_str = captured_body["file"]
-        assert isinstance(uploaded_str, str)
+        assert isinstance(captured_body["file"], bytes), "file must be raw bytes, not str"
+        assert captured_body["file"] == binary_data, "Binary data must survive without corruption"
 
-        # Decode back and verify it matches original binary data
-        decoded_bytes = base64.b64decode(uploaded_str)
-        assert decoded_bytes == binary_data
-
-    def test_upload_file_with_binary_content_uses_base64(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        """Regression test: binary file uploads should be base64-encoded to preserve data integrity."""
-        import base64
-
-        # Create a temporary binary file with non-UTF8 bytes
-        binary_data = b"\x00\xFF\xFE\x01\x02\x03\x80\x81\x82\x83"
+    def test_upload_file_with_non_utf8_binary_data(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Regression: binary file upload must preserve non-UTF8 bytes."""
+        # Create a temporary binary file with complete byte range
+        binary_data = bytes(range(256))
         temp_file = tmp_path / "binary_test.dat"
         temp_file.write_bytes(binary_data)
 
         obj = _mk_object_info_response(key="uploaded.dat")
         captured_body: dict[str, object] = {}
 
-        def _capture_upload(*, client: object, body: object) -> Response[ObjectInfoResponse]:  # noqa: ARG001
-            captured_body["file"] = body.file  # type: ignore[union-attr]
+        def _capture_upload(*, client: object, body: object) -> Response[ObjectInfoResponse]:
+            captured_body["file"] = body.file  # type: ignore[attr-defined]
             return Response(
                 status_code=HTTPStatus.OK,
                 content=b"",
@@ -405,13 +401,6 @@ class TestCloudStorageAdapter:
         adapter = CloudStorageAdapter(base_url="http://localhost:8000", token="t")
         result = adapter.upload_file(local_path=str(temp_file), key="uploaded.dat")
 
-        # Verify the result
         assert result.key == "uploaded.dat"
-
-        # Verify the file was base64-encoded
-        uploaded_str = captured_body["file"]
-        assert isinstance(uploaded_str, str)
-
-        # Decode and verify integrity
-        decoded_bytes = base64.b64decode(uploaded_str)
-        assert decoded_bytes == binary_data
+        assert isinstance(captured_body["file"], bytes), "file must be raw bytes, not str"
+        assert captured_body["file"] == binary_data, "Binary file data must survive without corruption"

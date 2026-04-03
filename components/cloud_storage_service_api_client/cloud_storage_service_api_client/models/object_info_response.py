@@ -11,7 +11,9 @@ from dateutil.parser import isoparse
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
+    from ..models.object_info_response_metadata_type_0 import (
+        ObjectInfoResponseMetadataType0,
+    )
 
 
 T = TypeVar("T", bound="ObjectInfoResponse")
@@ -39,7 +41,9 @@ class ObjectInfoResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
+        from ..models.object_info_response_metadata_type_0 import (
+            ObjectInfoResponseMetadataType0,
+        )
 
         key = self.key
 
@@ -99,7 +103,9 @@ class ObjectInfoResponse:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
+        from ..models.object_info_response_metadata_type_0 import (
+            ObjectInfoResponseMetadataType0,
+        )
 
         d = dict(src_dict)
         key = d.pop("key")
@@ -148,7 +154,9 @@ class ObjectInfoResponse:
 
         content_type = _parse_content_type(d.pop("content_type", UNSET))
 
-        def _parse_metadata(data: object) -> None | ObjectInfoResponseMetadataType0 | Unset:
+        def _parse_metadata(
+            data: object,
+        ) -> None | ObjectInfoResponseMetadataType0 | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):

@@ -1222,50 +1222,48 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
-    { name = "fastapi" },
+    { name = "cloud-storage-adapter" },
+    { name = "cloud-storage-client-api" },
+    { name = "cloud-storage-service" },
+    { name = "cloud-storage-service-api-client" },
+    { name = "gcp-client-impl" },
     { name = "google-api-python-client-stubs" },
-    { name = "google-cloud-storage" },
-    { name = "httpx" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings-python" },
     { name = "mypy" },
     { name = "openapi-python-client" },
-    { name = "pydantic" },
     { name = "pymdown-extensions" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-mock" },
-    { name = "python-multipart" },
     { name = "ruff" },
     { name = "types-requests" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fastapi", specifier = ">=0.109.0" },
+    { name = "cloud-storage-adapter", editable = "components/cloud_storage_adapter" },
+    { name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" },
+    { name = "cloud-storage-service", editable = "components/cloud_storage_service" },
+    { name = "cloud-storage-service-api-client", editable = "components/cloud_storage_service_api_client" },
+    { name = "gcp-client-impl", editable = "components/gcp_client_impl" },
     { name = "google-api-python-client-stubs", specifier = ">=1.30.0" },
-    { name = "google-cloud-storage", specifier = ">=2.10.0" },
-    { name = "httpx", specifier = ">=0.26.0" },
     { name = "mkdocs", specifier = ">=1.6.1" },
     { name = "mkdocs-material", specifier = ">=9.6.15" },
     { name = "mkdocstrings-python", specifier = ">=1.16.12" },
     { name = "mypy", specifier = ">=1.17.0" },
     { name = "openapi-python-client", specifier = ">=0.28.3" },
-    { name = "pydantic", specifier = ">=2.6.0" },
     { name = "pymdown-extensions", specifier = ">=10.16.1" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=0.23.0" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
     { name = "pytest-mock", specifier = ">=3.10.0" },
-    { name = "python-multipart", specifier = ">=0.0.7" },
     { name = "ruff", specifier = ">=0.12.7" },
     { name = "types-requests", specifier = ">=2.32.4.20250611" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
 
 [[package]]

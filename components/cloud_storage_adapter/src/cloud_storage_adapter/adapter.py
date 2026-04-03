@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import base64
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
-from urllib.parse import quote
 
 from cloud_storage_client_api import CloudStorageClient, ObjectInfo
+from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageOperationError, StorageValidationError
 from cloud_storage_service_api_client import AuthenticatedClient
 from cloud_storage_service_api_client.api.storage import (
     delete_object_delete_key_delete,
+    download_file_download_key_get,
     head_object_head_key_get,
     list_objects_list_get,
     upload_file_upload_post,
@@ -39,13 +39,10 @@ class CloudStorageAdapter(CloudStorageClient):
             file_bytes = Path(local_path).read_bytes()
         except OSError as exc:
             msg = f"Local file not found: {local_path}"
-            raise FileNotFoundError(msg) from exc
-
-        # Encode bytes as base64 to safely transmit binary data as string
-        file_base64 = base64.b64encode(file_bytes).decode("ascii")
+            raise ObjectNotFoundError(msg) from exc
 
         body = BodyUploadFileUploadPost(
-            file=file_base64,
+            file=file_bytes,  # type: ignore[arg-type]  # Generated model types file as str, but multipart correctly supports bytes.
             key=key,
             content_type=content_type if content_type is not None else UNSET,
         )
@@ -68,11 +65,8 @@ class CloudStorageAdapter(CloudStorageClient):
         metadata: Mapping[str, str] | None = None,
     ) -> ObjectInfo:
         """Upload raw bytes through the service-backed adapter."""
-        # Encode bytes as base64 to safely transmit binary data as string
-        file_base64 = base64.b64encode(data).decode("ascii")
-
         body = BodyUploadFileUploadPost(
-            file=file_base64,
+            file=data,  # type: ignore[arg-type]  # Generated model types file as str, but multipart correctly supports bytes.
             key=key,
             content_type=content_type if content_type is not None else UNSET,
         )
@@ -92,16 +86,19 @@ class CloudStorageAdapter(CloudStorageClient):
 
     def download_bytes(self, *, key: str) -> bytes:
         """Download bytes for a given object key."""
-        encoded_key = quote(key, safe="")
-        response = self._client.get_httpx_client().request("get", f"/download/{encoded_key}")
+        response = download_file_download_key_get.sync_detailed(key=key, client=self._client)
+
         if response.status_code == HTTPStatus.OK:
-            return response.content
+            return response.content  # raw bytes from HTTP response body
+
         if response.status_code == HTTPStatus.NOT_FOUND:
             msg = f"Object not found: {key}"
-            raise FileNotFoundError(msg)
+            raise ObjectNotFoundError(msg)
 
-        msg = f"download_bytes failed with status {response.status_code}: {response.text}"
-        raise RuntimeError(msg)
+        # Let the shared helper raise a validation or generic operation error
+        self._raise_validation_or_runtime("download_bytes", response.parsed, response.status_code)
+        msg = "unreachable"
+        raise AssertionError(msg)
 
     def list(self, *, prefix: str) -> list[ObjectInfo]:
         """List objects with the provided key prefix."""
@@ -124,7 +121,7 @@ class CloudStorageAdapter(CloudStorageClient):
             return
         if response.status_code == HTTPStatus.NOT_FOUND:
             msg = f"Object not found: {key}"
-            raise FileNotFoundError(msg)
+            raise ObjectNotFoundError(msg)
 
         self._raise_validation_or_runtime("delete", parsed, response.status_code)
 
@@ -168,7 +165,7 @@ class CloudStorageAdapter(CloudStorageClient):
     def _raise_validation_or_runtime(operation: str, parsed: object, status_code: int) -> NoReturn:
         if isinstance(parsed, HTTPValidationError):
             msg = f"{operation} request validation failed (status {status_code})"
-            raise TypeError(msg)
+            raise StorageValidationError(msg)
 
         msg = f"{operation} failed with status {status_code}"
-        raise RuntimeError(msg)
+        raise StorageOperationError(msg)

@@ -7,6 +7,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cloud_storage_client_api.exceptions import StorageOperationError
 from gcp_client_impl.client import GCPClientConfig, GCPCloudStorageClient
 
 
@@ -35,7 +36,7 @@ class TestBuildCredentials:
     def test_raises_for_invalid_service_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GCP_SERVICE_KEY", "not-valid-json-!!!")
         monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
-        with patch("gcp_client_impl.client.service_account"), pytest.raises(RuntimeError, match="GCP_SERVICE_KEY"):
+        with patch("gcp_client_impl.client.service_account"), pytest.raises(StorageOperationError, match="GCP_SERVICE_KEY"):
             GCPCloudStorageClient(bucket_name="b")._build_credentials()
 
 
@@ -109,12 +110,12 @@ class TestOAuthTokenCredentials:
         assert result is mock_creds
 
     def test_missing_oauth2_credentials_module_raises(self) -> None:
-        """RuntimeError should be raised if google-auth is not installed."""
+        """StorageOperationError should be raised if google-auth is not installed."""
         client = _make_client(oauth_token="ya29.test-token")
 
         with (
             patch("gcp_client_impl.client.oauth2_credentials", None),
-            pytest.raises(RuntimeError, match="google-auth is not installed"),
+            pytest.raises(StorageOperationError, match="google-auth is not installed"),
         ):
             client._build_credentials()
 

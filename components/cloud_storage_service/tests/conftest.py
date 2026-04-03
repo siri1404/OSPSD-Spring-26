@@ -23,6 +23,7 @@ os.environ["GOOGLE_OAUTH_REDIRECT_URI"] = "http://localhost:8000/auth/callback"
 os.environ["GCS_BUCKET_NAME"] = "test-bucket"
 os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
 os.environ["DEV_AUTH_TOKEN"] = "dev-token-12345"
+os.environ["ENVIRONMENT"] = "test"
 
 # Import after setting env vars
 from cloud_storage_service.main import app

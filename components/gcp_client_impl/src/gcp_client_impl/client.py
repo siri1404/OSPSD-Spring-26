@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from cloud_storage_client_api import CloudStorageClient, ObjectInfo
+from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageOperationError
 
 try:
     from google.cloud import storage
@@ -72,13 +73,13 @@ class GCPCloudStorageClient(CloudStorageClient):
     def _require_google_cloud_storage(self) -> None:
         if storage is None:
             msg = "google-cloud-storage is not installed. Install dependencies first (for example: `uv sync`)."
-            raise RuntimeError(msg)
+            raise StorageOperationError(msg)
 
     def _build_credentials(self) -> Any | None:
         if self._config.oauth_token:
             if oauth2_credentials is None:
                 msg = "google-auth is not installed, cannot build OAuth credentials."
-                raise RuntimeError(msg)
+                raise StorageOperationError(msg)
             return oauth2_credentials.Credentials(token=self._config.oauth_token)  # type: ignore[no-untyped-call]
 
         if self._config.credentials_path:
@@ -90,7 +91,7 @@ class GCPCloudStorageClient(CloudStorageClient):
 
         if service_account is None:
             msg = "google-auth is not installed, so service-account credentials cannot be built."
-            raise RuntimeError(msg)
+            raise StorageOperationError(msg)
 
         try:
             decoded = base64.b64decode(service_key, validate=True).decode("utf-8")
@@ -102,7 +103,7 @@ class GCPCloudStorageClient(CloudStorageClient):
             info = json.loads(payload)
         except json.JSONDecodeError as exc:
             msg = "GCP_SERVICE_KEY must be a valid JSON string or base64-encoded JSON service account key."
-            raise RuntimeError(msg) from exc
+            raise StorageOperationError(msg) from exc
 
         return service_account.Credentials.from_service_account_info(info)  # type: ignore[no-untyped-call]
 
@@ -129,7 +130,7 @@ class GCPCloudStorageClient(CloudStorageClient):
     def _get_bucket_name(self) -> str:
         if not self._config.bucket_name:
             msg = "GCS bucket is not configured. Set `GCS_BUCKET_NAME` or pass `bucket_name` to GCPCloudStorageClient."
-            raise RuntimeError(msg)
+            raise StorageOperationError(msg)
         return self._config.bucket_name
 
     def _get_bucket(self) -> Any:
@@ -168,7 +169,7 @@ class GCPCloudStorageClient(CloudStorageClient):
             data = Path(local_path).read_bytes()
         except OSError as exc:
             msg = f"Cannot read local file '{local_path}'"
-            raise FileNotFoundError(msg) from exc
+            raise ObjectNotFoundError(msg) from exc
 
         return self.upload_bytes(data=data, key=key, content_type=content_type)
 
@@ -220,14 +221,14 @@ class GCPCloudStorageClient(CloudStorageClient):
             Raw bytes of the downloaded object.
 
         Raises:
-            FileNotFoundError: If the object does not exist.
+            ObjectNotFoundError: If the object does not exist.
         """
         bucket = self._get_bucket()
         blob = bucket.blob(key)
 
         if not blob.exists():
             msg = f"Object '{key}' not found in bucket '{self._get_bucket_name()}'"
-            raise FileNotFoundError(msg)
+            raise ObjectNotFoundError(msg)
 
         return blob.download_as_bytes()  # type: ignore[no-any-return]
 
@@ -252,14 +253,14 @@ class GCPCloudStorageClient(CloudStorageClient):
             key: Key/path of the object to delete.
 
         Raises:
-            FileNotFoundError: If the object does not exist.
+            ObjectNotFoundError: If the object does not exist.
         """
         bucket = self._get_bucket()
         blob = bucket.blob(key)
 
         if not blob.exists():
             msg = f"Object '{key}' not found in bucket '{self._get_bucket_name()}'"
-            raise FileNotFoundError(msg)
+            raise ObjectNotFoundError(msg)
 
         blob.delete()
 

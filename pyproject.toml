@@ -22,14 +22,13 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "ruff>=0.12.7",
     "types-requests>=2.32.4.20250611",
-    "google-cloud-storage>=2.10.0",
     "google-api-python-client-stubs>=1.30.0",
-    "fastapi>=0.109.0",
-    "uvicorn[standard]>=0.27.0",
-    "python-multipart>=0.0.7",
-    "httpx>=0.26.0",
-    "pydantic>=2.6.0",
     "openapi-python-client>=0.28.3",
+    "cloud-storage-client-api",
+    "gcp-client-impl",
+    "cloud-storage-service",
+    "cloud-storage-adapter",
+    "cloud-storage-service-api-client",
 ]
 
 # ============================================
@@ -71,6 +70,8 @@ ignore = [
     "E402",     # imports after path bootstrap - intentional
     "BLE001",   # blind exception in sanity check - intentional
     "T201",     # print equivalent - sys.stdout.write for demo output
+    "F401",     # unused imports - DI registration triggers side effects
+    "TC002",    # CloudStorageClient needed at runtime for FastAPI dependency injection
 ]
 
 "tests/**/*.py" = [
@@ -84,6 +85,7 @@ ignore = [
     "S106",     # hardcoded password - test credentials are fine
     "ARG001",   # unused arg - pytest fixtures
     "ARG002",   # unused method arg - pytest fixtures
+    "ARG005",   # unused lambda arg - test mocks have required signatures
     "TRY300",   # consider moving statement - test-specific patterns
     "BLE001",   # blind exception - acceptable in tests
     "PLC0415",  # import outside toplevel - OK in tests
@@ -91,6 +93,7 @@ ignore = [
     "PLW0108",  # lambda in tests - acceptable
     "TC003",    # Generator needed at runtime for pytest fixtures
     "F401",     # Can have unused imports in TYPE_CHECKING
+    "S603",     # subprocess call - test automation is intentional
 ]
 
 "components/**/tests/**/*.py" = [
@@ -104,6 +107,7 @@ ignore = [
     "S106",     # hardcoded password - test credentials are fine
     "ARG001",   # unused arg - pytest fixtures
     "ARG002",   # unused method arg - pytest fixtures
+    "ARG005",   # unused lambda arg - test mocks have required signatures
     "TRY300",   # consider moving statement - test-specific patterns
     "BLE001",   # blind exception - acceptable in tests
     "PLC0415",  # import outside toplevel - OK in tests
@@ -113,6 +117,9 @@ ignore = [
     "F401",     # Can have unused imports in TYPE_CHECKING
     "DTZ005",   # datetime without timezone - test mocks
     "FURB162",  # timezone replacement - test code
+    "S603",     # subprocess call - test automation is intentional
+    "S108",     # insecure temp files - test fixtures are fine
+    "PLR0913",  # too many args - test helper functions
 ]
 
 "**/gcp_client_impl/**/*.py" = [
@@ -168,6 +175,7 @@ ignore_missing_imports = true
 module = ["tests.*", "components.*.tests.*"]
 disallow_untyped_decorators = false
 
+# Auto-generated client: openapi-python-client output has incomplete type annotations
 [[tool.mypy.overrides]]
 module = ["cloud_storage_service_api_client.*", "components.cloud_storage_service_api_client.*"]
 ignore_errors = true

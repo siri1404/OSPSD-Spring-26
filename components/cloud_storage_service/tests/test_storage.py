@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
+from cloud_storage_client_api.exceptions import ObjectNotFoundError
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -121,8 +122,8 @@ def test_download_nonexistent_file_returns_404(
     mock_storage_client: MagicMock,
 ) -> None:
     """Test download of non-existent file returns 404."""
-    # Mock raises FileNotFoundError
-    mock_storage_client.download_bytes.side_effect = FileNotFoundError("File not found")
+    # Mock raises domain-level not-found exception
+    mock_storage_client.download_bytes.side_effect = ObjectNotFoundError("File not found")
 
     response = client.get("/download/uploads/missing.txt", headers=auth_headers)
 
@@ -243,8 +244,8 @@ def test_delete_nonexistent_file_returns_404(
     mock_storage_client: MagicMock,
 ) -> None:
     """Test delete of non-existent file returns 404."""
-    # Mock raises FileNotFoundError
-    mock_storage_client.delete.side_effect = FileNotFoundError("File not found")
+    # Mock raises domain-level not-found exception
+    mock_storage_client.delete.side_effect = ObjectNotFoundError("File not found")
 
     response = client.delete("/delete/uploads/missing.txt", headers=auth_headers)
 

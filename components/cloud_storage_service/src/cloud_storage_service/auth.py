@@ -95,17 +95,21 @@ async def exchange_code_for_token(code: str, config: AuthConfig) -> dict[str, An
 
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Verify bearer token from request headers.
+    """Verify bearer token and return the provider access token.
+
+    Token can be a service-owned opaque session token or a dev token.
 
     Args:
         credentials: HTTP bearer token from request.
 
     Returns:
-        Validated access token.
+        Provider access token (resolved from session or dev token).
 
     Raises:
-        HTTPException: If token is invalid or missing.
+        HTTPException: If token is invalid or expired.
     """
+    from cloud_storage_service.sessions import active_sessions
+
     token = credentials.credentials
 
     if not token:
@@ -115,34 +119,20 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # DEVELOPMENT MODE: Allow special dev token for local testing
-    # This bypasses OAuth when you can't complete the OAuth flow
-    # SECURITY: Only works if DEV_AUTH_TOKEN is explicitly set (no default)
+    # Check if this is a dev token (only in development/test)
+    environment = os.getenv("ENVIRONMENT", "production")
     dev_token = os.getenv("DEV_AUTH_TOKEN")
-    if dev_token and token == dev_token:
+    if environment in ("development", "test") and dev_token and token == dev_token:
         return token
 
-    # In a production system, you would verify the token with Google's token info endpoint
-    # or validate the JWT signature. For this implementation, we'll do basic validation.
-    try:
-        import httpx
+    # Resolve opaque session token → provider access token
+    provider_token = active_sessions.get(token)
+    if provider_token:
+        return provider_token
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://www.googleapis.com/oauth2/v1/tokeninfo",
-                params={"access_token": token},
-            )
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication token",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            return token
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token validation failed: {exc}",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+    # Token not recognized - could be invalid or expired
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired session token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )

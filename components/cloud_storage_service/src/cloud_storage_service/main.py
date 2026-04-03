@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import base64
 import os
 import secrets
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
+from cloud_storage_client_api import CloudStorageClient
+from cloud_storage_client_api.exceptions import ObjectNotFoundError
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -33,6 +34,7 @@ from cloud_storage_service.models import (
     OAuthLoginResponse,
     ObjectInfoResponse,
 )
+from cloud_storage_service.sessions import active_sessions
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -41,20 +43,25 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Store active sessions (in production, use Redis or a proper session store)
-active_sessions: dict[str, str] = {}
 
+def get_storage_client(token: Annotated[str, Depends(verify_token)]) -> CloudStorageClient:
+    """Get GCP Cloud Storage client instance using verified provider token.
 
-def get_storage_client(token: Annotated[str, Depends(verify_token)]) -> GCPCloudStorageClient:
-    """Get GCP Cloud Storage client instance.
+    The token passed here is already verified and resolved to a provider access token
+    (either from session mapping, dev token, or direct provider token).
+
+    Args:
+        token: Verified provider access token (from verify_token dependency).
 
     Returns:
-        Configured GCPCloudStorageClient instance.
+        Configured CloudStorageClient instance.
     """
-    # SECURITY: Only use dev token if explicitly configured (no default)
-    dev_token = os.environ.get("DEV_ACCESS_TOKEN")
-    if dev_token and token == dev_token:
+    environment = os.getenv("ENVIRONMENT", "production")
+    dev_token = os.getenv("DEV_AUTH_TOKEN")
+    # If this is the dev token (already passed through verify_token), use default credentials
+    if environment in ("development", "test") and dev_token and token == dev_token:
         return GCPCloudStorageClient()
+    # Otherwise use the provided OAuth token (from session mapping or direct provider token)
     return GCPCloudStorageClient(oauth_token=token)
 
 
@@ -127,7 +134,7 @@ async def oauth_callback(
 ) -> OAuthCallbackResponse:
     """Handle OAuth 2.0 callback from Google.
 
-    Exchanges authorization code for access token.
+    Exchanges authorization code for provider access token and creates a service-owned session.
 
     Args:
         code: Authorization code from Google OAuth.
@@ -135,26 +142,35 @@ async def oauth_callback(
         config: OAuth configuration.
 
     Returns:
-        Access token and token metadata.
+        Service-owned session token (opaque, not the provider token).
 
     Raises:
         HTTPException: If state is invalid or token exchange fails.
     """
-    # Validate state parameter
+    # Validate state parameter for CSRF protection
     if state not in active_sessions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid state parameter. Possible CSRF attack.",
         )
 
-    # Exchange code for token
+    # Exchange code for provider access token
     try:
         token_data = await exchange_code_for_token(code, config)
-        active_sessions[state] = token_data["access_token"]
+        provider_token = token_data["access_token"]
+
+        # Generate opaque service-owned session token
+        opaque_session_id = secrets.token_urlsafe(32)
+
+        # Store mapping: opaque_session_id -> provider_token
+        active_sessions[opaque_session_id] = provider_token
+
+        # Clean up state-based session (no longer needed)
+        del active_sessions[state]
 
         return OAuthCallbackResponse(
-            access_token=token_data["access_token"],
-            token_type=token_data.get("token_type", "bearer"),
+            access_token=opaque_session_id,  # Return opaque token, not provider token
+            token_type="bearer",  # noqa: S106 - Standard OAuth2 token type, not a password
             expires_in=token_data.get("expires_in"),
         )
     except Exception as exc:
@@ -162,6 +178,24 @@ async def oauth_callback(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to exchange code for token: {exc}",
         ) from exc
+
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+async def logout(token: str = Depends(verify_token)) -> None:
+    """Logout by invalidating the session token.
+
+    Removes the service-owned session token, effectively revoking access.
+
+    Args:
+        token: Validated access token (session token or provider token).
+
+    Returns:
+        204 No Content on success.
+    """
+    # Remove the session token if it exists (if it's a session token)
+    if token in active_sessions:
+        del active_sessions[token]
+    # If it's not a session token (e.g., dev token), logout is a no-op
 
 
 # ============================================================================
@@ -175,7 +209,7 @@ async def upload_file(
     key: Annotated[str, Form(description="Object key/path in storage")],
     content_type: Annotated[str | None, Form(description="MIME type of the content")] = None,
     token: str = Depends(verify_token),
-    client: GCPCloudStorageClient = Depends(get_storage_client),
+    client: CloudStorageClient = Depends(get_storage_client),
 ) -> ObjectInfoResponse:
     """Upload a file to cloud storage.
 
@@ -198,20 +232,12 @@ async def upload_file(
         # Read file contents
         file_contents = await file.read()
 
-        # Try to decode from base64 if the adapter sent base64-encoded data
-        # This supports binary files that were base64-encoded by the adapter
-        try:
-            file_bytes = base64.b64decode(file_contents)
-        except Exception:
-            # If base64 decoding fails, assume raw bytes were sent
-            file_bytes = file_contents
-
         # Use content_type from form if provided, otherwise use file's content_type
         final_content_type = content_type or file.content_type
 
         # Upload to GCS
         object_info = client.upload_bytes(
-            data=file_bytes,
+            data=file_contents,
             key=key,
             content_type=final_content_type,
         )
@@ -228,7 +254,7 @@ async def upload_file(
 async def download_file(
     key: str,
     token: Annotated[str, Depends(verify_token)],
-    client: Annotated[GCPCloudStorageClient, Depends(get_storage_client)],
+    client: Annotated[CloudStorageClient, Depends(get_storage_client)],
 ) -> Response:
     """Download a file from cloud storage.
 
@@ -260,7 +286,7 @@ async def download_file(
                 "Content-Disposition": f'attachment; filename="{key.rsplit("/", maxsplit=1)[-1]}"',
             },
         )
-    except FileNotFoundError as exc:
+    except ObjectNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File not found: {key}",
@@ -276,7 +302,7 @@ async def download_file(
 async def list_objects(
     prefix: Annotated[str, Query(description="Prefix filter for object keys")] = "",
     token: str = Depends(verify_token),
-    client: GCPCloudStorageClient = Depends(get_storage_client),
+    client: CloudStorageClient = Depends(get_storage_client),
 ) -> ListResponse:
     """List objects in cloud storage with optional prefix filter.
 
@@ -309,7 +335,7 @@ async def list_objects(
 async def delete_object(
     key: str,
     token: Annotated[str, Depends(verify_token)],
-    client: Annotated[GCPCloudStorageClient, Depends(get_storage_client)],
+    client: Annotated[CloudStorageClient, Depends(get_storage_client)],
 ) -> None:
     """Delete an object from cloud storage.
 
@@ -325,7 +351,7 @@ async def delete_object(
     """
     try:
         client.delete(key=key)
-    except FileNotFoundError as exc:
+    except ObjectNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File not found: {key}",
@@ -341,7 +367,7 @@ async def delete_object(
 async def head_object(
     key: str,
     token: Annotated[str, Depends(verify_token)],
-    client: Annotated[GCPCloudStorageClient, Depends(get_storage_client)],
+    client: Annotated[CloudStorageClient, Depends(get_storage_client)],
 ) -> ObjectInfoResponse:
     """Get metadata for an object without downloading its contents.
 

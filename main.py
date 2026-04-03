@@ -24,8 +24,8 @@ def _bootstrap_workspace_paths() -> None:
 
 _bootstrap_workspace_paths()
 
-import cloud_storage_adapter  # noqa: F401  # Import triggers DI registration
-import gcp_client_impl  # noqa: F401  # Import triggers DI registration
+import cloud_storage_adapter  # Import triggers DI registration
+import gcp_client_impl  # Import triggers DI registration
 from cloud_storage_client_api.di import get_client
 
 

@@ -17,7 +17,7 @@ import pytest
 from cloud_storage_adapter import CloudStorageAdapter
 
 SERVICE_URL = os.getenv("CLOUD_STORAGE_SERVICE_URL", "http://localhost:8000")
-DEV_TOKEN = os.getenv("DEV_AUTH_TOKEN", "dev-token-12345")
+DEV_TOKEN = os.getenv("DEV_AUTH_TOKEN", "")
 
 
 def service_available() -> bool:
