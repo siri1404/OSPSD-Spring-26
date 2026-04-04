@@ -369,6 +369,8 @@ See the GCP implementation as a template.
 
 ### Platform
  - **Live URL:** https://cloud-storage-service-mcni.onrender.com
+ - **Docs:** https://cloud-storage-service-mcni.onrender.com/docs
+ - **OAuth Login Endpoint:** https://cloud-storage-service-mcni.onrender.com/auth/login
 
 ### Required Environment Variables
 | Variable | Purpose |

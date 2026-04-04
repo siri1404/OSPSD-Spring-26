@@ -13,7 +13,9 @@ class _DummyClient(CloudStorageClient):
     def upload_file(self, *, local_path: str, key: str, content_type: str | None = None) -> ObjectInfo:
         return ObjectInfo(key=key)
 
-    def upload_bytes(self, *, data: bytes, key: str, content_type: str | None = None, metadata: Mapping[str, str] | None = None) -> ObjectInfo:
+    def upload_bytes(
+        self, *, data: bytes, key: str, content_type: str | None = None, metadata: Mapping[str, str] | None = None
+    ) -> ObjectInfo:
         return ObjectInfo(key=key)
 
     def download_bytes(self, *, key: str) -> bytes:

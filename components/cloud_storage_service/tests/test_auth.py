@@ -13,28 +13,26 @@ if TYPE_CHECKING:
 
 @pytest.mark.unit
 def test_login_endpoint_returns_200(client: TestClient) -> None:
-    """Test that login endpoint returns 200 OK."""
-    response = client.post("/auth/login")
-    assert response.status_code == 200
+    """Test that login endpoint returns a redirect response."""
+    response = client.get("/auth/login", follow_redirects=False)
+    assert response.status_code == 307
 
 
 @pytest.mark.unit
 def test_login_endpoint_returns_auth_url(client: TestClient) -> None:
-    """Test that login endpoint returns OAuth authorization URL."""
-    response = client.post("/auth/login")
-    data = response.json()
+    """Test that login endpoint redirects to OAuth authorization URL."""
+    response = client.get("/auth/login", follow_redirects=False)
+    auth_url = response.headers["location"]
 
-    assert "auth_url" in data
-    assert isinstance(data["auth_url"], str)
-    assert data["auth_url"].startswith("https://accounts.google.com/o/oauth2/v2/auth")
+    assert isinstance(auth_url, str)
+    assert auth_url.startswith("https://accounts.google.com/o/oauth2/v2/auth")
 
 
 @pytest.mark.unit
 def test_login_endpoint_auth_url_contains_required_params(client: TestClient) -> None:
     """Test that auth URL contains required OAuth parameters."""
-    response = client.post("/auth/login")
-    data = response.json()
-    auth_url = data["auth_url"]
+    response = client.get("/auth/login", follow_redirects=False)
+    auth_url = response.headers["location"]
 
     # Check for required OAuth parameters
     assert "client_id=" in auth_url
@@ -47,9 +45,8 @@ def test_login_endpoint_auth_url_contains_required_params(client: TestClient) ->
 @pytest.mark.unit
 def test_login_endpoint_includes_storage_scopes(client: TestClient) -> None:
     """Test that auth URL includes GCS storage scopes."""
-    response = client.post("/auth/login")
-    data = response.json()
-    auth_url = data["auth_url"]
+    response = client.get("/auth/login", follow_redirects=False)
+    auth_url = response.headers["location"]
 
     # Check for storage scopes
     assert "devstorage.read_write" in auth_url or "cloud-platform" in auth_url
@@ -72,8 +69,8 @@ async def test_callback_endpoint_with_valid_code() -> None:
     with patch("cloud_storage_service.main.exchange_code_for_token", new=AsyncMock(return_value=mock_token_data)):
         # First, get a state parameter from login
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            login_response = await ac.post("/auth/login")
-            auth_url = login_response.json()["auth_url"]
+            login_response = await ac.get("/auth/login", follow_redirects=False)
+            auth_url = login_response.headers["location"]
 
             # Extract state from auth_url
             import urllib.parse

@@ -12,7 +12,7 @@ from cloud_storage_client_api import CloudStorageClient
 from cloud_storage_client_api.exceptions import ObjectNotFoundError
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from gcp_client_impl import GCPCloudStorageClient
 
 # Load .env file from project root
@@ -103,19 +103,25 @@ async def health_check() -> HealthResponse:
     )
 
 
+@app.get("/", tags=["Health"])
+def root() -> dict[str, str]:
+    """Return a root status message."""
+    return {"message": "Client Storage Service is running"}
+
+
 # ============================================================================
 # OAuth 2.0 Authentication Endpoints
 # ============================================================================
 
 
-@app.post("/auth/login", response_model=OAuthLoginResponse, tags=["Authentication"])
-async def oauth_login(config: Annotated[AuthConfig, Depends(get_auth_config)]) -> OAuthLoginResponse:
+@app.get("/auth/login", tags=["Authentication"])
+async def oauth_login(config: Annotated[AuthConfig, Depends(get_auth_config)]) -> RedirectResponse:
     """Initiate OAuth 2.0 login flow with Google.
 
     Generates an authorization URL and redirects the user to Google's OAuth consent screen.
 
     Returns:
-        OAuth authorization URL for user redirect.
+        Redirect response to Google's OAuth consent screen.
     """
     # Generate a random state for CSRF protection
     state = secrets.token_urlsafe(32)
@@ -123,7 +129,7 @@ async def oauth_login(config: Annotated[AuthConfig, Depends(get_auth_config)]) -
 
     auth_url = build_oauth_url(config, state=state)
 
-    return OAuthLoginResponse(auth_url=auth_url)
+    return RedirectResponse(url=auth_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @app.get("/auth/callback", response_model=OAuthCallbackResponse, tags=["Authentication"])

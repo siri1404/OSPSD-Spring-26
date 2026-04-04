@@ -26,7 +26,6 @@ from cloud_storage_client_api.di import get_client
 from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageOperationError
 from cloud_storage_service_api_client import AuthenticatedClient
 from cloud_storage_service_api_client import Client as ServiceApiClient
-from cloud_storage_service_api_client.api.authentication import oauth_login_auth_login_post
 from cloud_storage_service_api_client.api.storage import (
     delete_object_delete_key_delete,
     download_file_download_key_get,
@@ -127,6 +126,7 @@ def service_runtime() -> Iterator[dict[str, str]]:
     env.setdefault("GOOGLE_OAUTH_CLIENT_ID", "test-client-id")
     env.setdefault("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret")
     env.setdefault("GOOGLE_OAUTH_REDIRECT_URI", f"{base_url}/auth/callback")
+    env.setdefault("ENVIRONMENT", "test")
     env["DEV_AUTH_TOKEN"] = dev_token
     env["DEV_ACCESS_TOKEN"] = dev_token
     env.setdefault("CLOUD_STORAGE_SERVICE_URL", base_url)
@@ -703,14 +703,11 @@ def test_generated_client_round_trip(service_runtime: dict[str, str]) -> None:
 
 @pytest.mark.circleci
 def test_service_oauth_login_returns_authorization_url(service_runtime: dict[str, str]) -> None:
-    """Ensure /auth/login responds with a well-formed Google OAuth URL."""
+    """Ensure /auth/login redirects to a well-formed Google OAuth URL."""
     base_url = service_runtime["base_url"]
-    client = ServiceApiClient(base_url=base_url)
-
-    login_response = oauth_login_auth_login_post.sync(client=client)
-    assert login_response is not None
-
-    auth_url = login_response.auth_url
+    response = httpx.get(f"{base_url}/auth/login", follow_redirects=False, timeout=10.0)
+    assert response.status_code == HTTPStatus.TEMPORARY_REDIRECT
+    auth_url = response.headers["location"]
     parsed = urlparse(auth_url)
     params = parse_qs(parsed.query)
 
