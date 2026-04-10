@@ -13,7 +13,7 @@ class TestBuildStorageClient:
     """Tests for GCPCloudStorageClient._build_storage_client."""
 
     def test_uses_from_service_account_json_when_credentials_path_given(self) -> None:
-        client = GCPCloudStorageClient(bucket_name="b", project_id="proj", credentials_path="/creds/key.json")
+        client = GCPCloudStorageClient(project_id="proj", credentials_path="/creds/key.json")
         mock_gcs = MagicMock()
         with patch("gcp_client_impl.client.storage") as mock_storage:
             mock_storage.Client.from_service_account_json.return_value = mock_gcs
@@ -23,11 +23,10 @@ class TestBuildStorageClient:
         assert result is mock_gcs
 
     def test_falls_back_to_application_default_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # When no credentials are configured GCS uses Application Default Credentials.
         monkeypatch.delenv("GCP_SERVICE_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
 
-        client = GCPCloudStorageClient(bucket_name="b", project_id="proj")
+        client = GCPCloudStorageClient(project_id="proj")
         mock_gcs = MagicMock()
         with patch("gcp_client_impl.client.storage") as mock_storage:
             mock_storage.Client.return_value = mock_gcs

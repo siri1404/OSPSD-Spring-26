@@ -1,10 +1,10 @@
 [project]
 name = "gcp-client-impl"
 version = "0.1.0"
-description = "GCP Cloud Storage implementation for cloud-storage-client-api"
-requires-python = ">=3.11"
+description = "GCP Cloud Storage implementation for cloud-storage-api"
+requires-python = ">=3.12"
 dependencies = [
-	"cloud-storage-client-api",
+	"cloud-storage-api",
 	"google-auth>=2.0.0",
 	"google-cloud-storage>=2.10.0",
 	"python-dotenv>=1.0.0",
@@ -27,7 +27,7 @@ build-backend = "hatchling.build"
 packages = ["src/gcp_client_impl"]
 
 [tool.uv.sources]
-cloud-storage-client-api = { workspace = true }
+cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
 
 [tool.pytest.ini_options]
 minversion = "8.0"

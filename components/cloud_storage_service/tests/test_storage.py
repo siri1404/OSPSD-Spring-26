@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
-from cloud_storage_client_api.exceptions import ObjectNotFoundError
+from cloud_storage_api.exceptions import ObjectNotFoundError
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -40,7 +40,7 @@ def test_upload_file_success(
     assert "updated_at" in response_data
 
     # Verify mock was called
-    mock_storage_client.upload_bytes.assert_called_once()
+    mock_storage_client.upload_obj.assert_called_once()
 
 
 @pytest.mark.unit
@@ -104,7 +104,8 @@ def test_download_file_success(
     assert response.content == b"test content"
 
     # Verify mock was called
-    mock_storage_client.download_bytes.assert_called_once_with(key="uploads/test.txt")
+    mock_storage_client.get_file_info.assert_called_once_with(container="test-bucket", object_name="uploads/test.txt")
+    mock_storage_client.download_file.assert_called_once()
 
 
 @pytest.mark.unit
@@ -123,7 +124,7 @@ def test_download_nonexistent_file_returns_404(
 ) -> None:
     """Test download of non-existent file returns 404."""
     # Mock raises domain-level not-found exception
-    mock_storage_client.download_bytes.side_effect = ObjectNotFoundError("File not found")
+    mock_storage_client.get_file_info.side_effect = ObjectNotFoundError("File not found")
 
     response = client.get("/download/uploads/missing.txt", headers=auth_headers)
 
@@ -165,7 +166,7 @@ def test_list_files_success(
     assert isinstance(data["objects"], list)
 
     # Verify mock was called
-    mock_storage_client.list.assert_called_once_with(prefix="")
+    mock_storage_client.list_files.assert_called_once_with(container="test-bucket", prefix="")
 
 
 @pytest.mark.unit
@@ -180,7 +181,20 @@ def test_list_files_with_prefix(
     assert response.status_code == 200
 
     # Verify mock was called with correct prefix
-    mock_storage_client.list.assert_called_once_with(prefix="uploads/")
+    mock_storage_client.list_files.assert_called_once_with(container="test-bucket", prefix="uploads/")
+
+
+@pytest.mark.unit
+def test_list_files_with_explicit_container(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    mock_storage_client: MagicMock,
+) -> None:
+    """Test that an explicit container query parameter is forwarded."""
+    response = client.get("/list?prefix=uploads/&container=other-bucket", headers=auth_headers)
+
+    assert response.status_code == 200
+    mock_storage_client.list_files.assert_called_once_with(container="other-bucket", prefix="uploads/")
 
 
 @pytest.mark.unit
@@ -226,7 +240,7 @@ def test_delete_file_success(
     assert response.status_code == 204
 
     # Verify mock was called
-    mock_storage_client.delete.assert_called_once_with(key="uploads/test.txt")
+    mock_storage_client.delete_file.assert_called_once_with(container="test-bucket", object_name="uploads/test.txt")
 
 
 @pytest.mark.unit
@@ -245,7 +259,7 @@ def test_delete_nonexistent_file_returns_404(
 ) -> None:
     """Test delete of non-existent file returns 404."""
     # Mock raises domain-level not-found exception
-    mock_storage_client.delete.side_effect = ObjectNotFoundError("File not found")
+    mock_storage_client.delete_file.side_effect = ObjectNotFoundError("File not found")
 
     response = client.delete("/delete/uploads/missing.txt", headers=auth_headers)
 
@@ -289,7 +303,7 @@ def test_head_file_success(
     assert "updated_at" in data
 
     # Verify mock was called
-    mock_storage_client.head.assert_called_once_with(key="uploads/test.txt")
+    mock_storage_client.get_file_info.assert_called_once_with(container="test-bucket", object_name="uploads/test.txt")
 
 
 @pytest.mark.unit
@@ -307,8 +321,8 @@ def test_head_nonexistent_file_returns_404(
     mock_storage_client: MagicMock,
 ) -> None:
     """Test head of non-existent file returns 404."""
-    # Mock returns None for non-existent file
-    mock_storage_client.head.return_value = None
+    # Mock raises not found for non-existent file
+    mock_storage_client.get_file_info.side_effect = ObjectNotFoundError("File not found")
 
     response = client.get("/head/uploads/missing.txt", headers=auth_headers)
 

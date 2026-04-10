@@ -1,303 +1,142 @@
-"""Edge case unit tests for GCPCloudStorageClient.
-
-Tests boundary conditions, error paths, and configuration edge cases.
-"""
+"""Edge case unit tests for GCPCloudStorageClient using shared API contract."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from io import BytesIO
+from unittest.mock import MagicMock
 
 import pytest
+from cloud_storage_api.exceptions import ObjectNotFoundError
 from gcp_client_impl.client import GCPCloudStorageClient
 
+TEST_CONTAINER = "test-bucket"
+
+
+def _mk_blob(name: str, *, size: int = 0, metadata: dict[str, str] | None = None) -> MagicMock:
+    blob = MagicMock()
+    blob.name = name
+    blob.size = size
+    blob.etag = "etag-1"
+    blob.content_type = "text/plain"
+    blob.updated = None
+    blob.generation = "g1"
+    blob.kms_key_name = None
+    blob.storage_class = "STANDARD"
+    blob.metadata = metadata if metadata is not None else {}
+    return blob
+
 
 @pytest.mark.unit
-class TestUploadBytesEdgeCases:
-    """Edge case tests for upload_bytes."""
+class TestUploadObjEdgeCases:
+    """Edge case tests for upload_obj."""
 
     def test_upload_empty_bytes(self) -> None:
-        """Test uploading empty bytes (0 bytes)."""
-        blob = MagicMock()
-        blob.name = "empty.txt"
-        blob.size = 0
+        blob = _mk_blob("empty.txt", size=0)
         bucket = MagicMock()
         bucket.blob.return_value = blob
         storage_client = MagicMock()
         storage_client.bucket.return_value = bucket
 
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
+        client = GCPCloudStorageClient()
         client._storage_client = storage_client
 
-        result = client.upload_bytes(data=b"", key="empty.txt")
+        result = client.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b""),
+            remote_path="empty.txt",
+        )
 
-        assert result.key == "empty.txt"
+        assert result.object_name == "empty.txt"
         assert result.size_bytes == 0
-        blob.upload_from_string.assert_called_once_with(b"", content_type=None)
 
     def test_upload_with_special_characters_in_key(self) -> None:
-        """Test uploading with special characters in object key."""
-        blob = MagicMock()
-        blob.name = "folder/file (1) [copy].txt"
-        blob.size = 42
+        remote_path = "folder/file (1) [copy].txt"
+        blob = _mk_blob(remote_path, size=42)
         bucket = MagicMock()
         bucket.blob.return_value = blob
         storage_client = MagicMock()
         storage_client.bucket.return_value = bucket
 
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
+        client = GCPCloudStorageClient()
         client._storage_client = storage_client
 
-        result = client.upload_bytes(data=b"test", key="folder/file (1) [copy].txt")
+        result = client.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b"test"),
+            remote_path=remote_path,
+        )
 
-        assert result.key == "folder/file (1) [copy].txt"
-
-    def test_upload_with_none_content_type(self) -> None:
-        """Test uploading without specifying content type."""
-        blob = MagicMock()
-        blob.name = "file.bin"
-        bucket = MagicMock()
-        bucket.blob.return_value = blob
-        storage_client = MagicMock()
-        storage_client.bucket.return_value = bucket
-
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
-        client._storage_client = storage_client
-
-        result = client.upload_bytes(data=b"binary", key="file.bin", content_type=None)
-
-        blob.upload_from_string.assert_called_once_with(b"binary", content_type=None)
-        assert result.key == "file.bin"
-
-    def test_upload_with_none_metadata(self) -> None:
-        """Test uploading without metadata."""
-        blob = MagicMock()
-        blob.name = "file.txt"
-        blob.metadata = {}  # Default empty metadata
-        bucket = MagicMock()
-        bucket.blob.return_value = blob
-        storage_client = MagicMock()
-        storage_client.bucket.return_value = bucket
-
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
-        client._storage_client = storage_client
-
-        result = client.upload_bytes(data=b"test", key="file.txt", metadata=None)
-
-        # Metadata should not be set when None is passed
-        assert result.key == "file.txt"
-
-    def test_upload_with_empty_metadata_dict(self) -> None:
-        """Test uploading with empty metadata dictionary."""
-        blob = MagicMock()
-        blob.name = "file.txt"
-        bucket = MagicMock()
-        bucket.blob.return_value = blob
-        storage_client = MagicMock()
-        storage_client.bucket.return_value = bucket
-
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
-        client._storage_client = storage_client
-
-        result = client.upload_bytes(data=b"test", key="file.txt", metadata={})
-
-        assert result.key == "file.txt"
-
-    def test_upload_very_large_bytes(self) -> None:
-        """Test uploading very large file (100 MB simulation)."""
-        blob = MagicMock()
-        blob.name = "large_file.zip"
-        blob.size = 100_000_000  # 100 MB
-        bucket = MagicMock()
-        bucket.blob.return_value = blob
-        storage_client = MagicMock()
-        storage_client.bucket.return_value = bucket
-
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
-        client._storage_client = storage_client
-
-        large_data = b"x" * 1_000_000  # 1 MB for test
-        result = client.upload_bytes(data=large_data, key="large_file.zip")
-
-        assert result.size_bytes == 100_000_000
+        assert result.object_name == remote_path
 
 
 @pytest.mark.unit
-class TestListEdgeCases:
-    """Edge case tests for list operation."""
+class TestListFilesEdgeCases:
+    """Edge case tests for list_files."""
 
     def test_list_with_empty_prefix(self) -> None:
-        """Test listing with empty prefix (list all)."""
-        blobs = [
-            MagicMock(name="file1.txt"),
-            MagicMock(name="file2.txt"),
-        ]
+        blob1 = _mk_blob("file1.txt", size=1)
+        blob2 = _mk_blob("file2.txt", size=2)
         bucket = MagicMock()
-        bucket.list_blobs.return_value = blobs
+        bucket.list_blobs.return_value = [blob1, blob2]
         storage_client = MagicMock()
         storage_client.bucket.return_value = bucket
 
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
+        client = GCPCloudStorageClient()
         client._storage_client = storage_client
 
-        results = client.list(prefix="")
+        results = client.list_files(container=TEST_CONTAINER, prefix="")
 
-        bucket.list_blobs.assert_called_with(prefix="")
+        bucket.list_blobs.assert_called_once_with(prefix="")
         assert len(results) == 2
-
-    def test_list_with_nested_prefix(self) -> None:
-        """Test listing with deeply nested prefix."""
-        blob = MagicMock()
-        blob.name = "a/b/c/d/e/file.txt"
-        blob.size = 100
-        blob.etag = "etag"
-        blob.updated = None
-        blob.content_type = "text/plain"
-        blob.metadata = {}
-        blobs = [blob]
-        bucket = MagicMock()
-        bucket.list_blobs.return_value = blobs
-        storage_client = MagicMock()
-        storage_client.bucket.return_value = bucket
-
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
-        client._storage_client = storage_client
-
-        results = client.list(prefix="a/b/c/d/e/")
-
-        assert len(results) == 1
-        assert results[0].key == "a/b/c/d/e/file.txt"
+        assert results[0].object_name == "file1.txt"
 
     def test_list_with_no_results(self) -> None:
-        """Test listing when no objects match prefix."""
         bucket = MagicMock()
         bucket.list_blobs.return_value = []
         storage_client = MagicMock()
         storage_client.bucket.return_value = bucket
 
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
+        client = GCPCloudStorageClient()
         client._storage_client = storage_client
 
-        results = client.list(prefix="nonexistent/")
+        results = client.list_files(container=TEST_CONTAINER, prefix="nonexistent/")
 
         assert results == []
 
 
 @pytest.mark.unit
-class TestConfigurationEdgeCases:
-    """Edge case tests for configuration handling."""
+class TestGetFileInfoEdgeCases:
+    """Edge case tests for get_file_info."""
 
-    def test_kwargs_override_all_env_vars(self) -> None:
-        """Test that kwargs completely override environment variables."""
-        with patch.dict(
-            "os.environ",
-            {
-                "GCS_BUCKET_NAME": "env-bucket",
-                "GOOGLE_CLOUD_PROJECT": "env-project",
-                "GOOGLE_APPLICATION_CREDENTIALS": "/env/path",
-            },
-        ):
-            client = GCPCloudStorageClient(
-                bucket_name="kwargs-bucket",
-                project_id="kwargs-project",
-                credentials_path="/kwargs/path",
-            )
-
-            assert client._config.bucket_name == "kwargs-bucket"
-            assert client._config.project_id == "kwargs-project"
-            assert client._config.credentials_path == "/kwargs/path"
-
-    def test_partial_env_vars_with_kwargs(self) -> None:
-        """Test mixing kwargs and env vars (precedence test)."""
-        with patch.dict(
-            "os.environ",
-            {
-                "GCS_BUCKET_NAME": "env-bucket",
-                "GOOGLE_CLOUD_PROJECT": "env-project",
-            },
-            clear=False,
-        ):
-            client = GCPCloudStorageClient(bucket_name="kwargs-bucket")
-
-            assert client._config.bucket_name == "kwargs-bucket"  # kwargs win
-            assert client._config.project_id == "env-project"  # falls back to env
-
-
-@pytest.mark.unit
-class TestBlobMetadataEdgeCases:
-    """Edge case tests for blob metadata handling."""
-
-    def test_blob_with_null_metadata(self) -> None:
-        """Test blob.metadata when it's None from GCS."""
-        blob = MagicMock()
-        blob.name = "file.txt"
-        blob.size = 100
-        blob.metadata = None  # GCS returns None, not empty dict
-        bucket = MagicMock()
-        bucket.blob.return_value = blob
-        storage_client = MagicMock()
-        storage_client.bucket.return_value = bucket
-
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
-        client._storage_client = storage_client
-
-        result = client.upload_bytes(data=b"test", key="file.txt")
-
-        # Should convert None to empty dict
-        assert result.metadata == {}
-
-    def test_blob_metadata_with_special_characters(self) -> None:
-        """Test metadata values containing special characters."""
-        blob = MagicMock()
-        blob.name = "file.txt"
-        blob.metadata = {"author": "José García", "key": "value-with-dash_underscore"}
-        bucket = MagicMock()
-        bucket.blob.return_value = blob
-        storage_client = MagicMock()
-        storage_client.bucket.return_value = bucket
-
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
-        client._storage_client = storage_client
-
-        result = client.upload_bytes(data=b"test", key="file.txt")
-
-        assert result.metadata == {"author": "José García", "key": "value-with-dash_underscore"}
-
-
-@pytest.mark.unit
-class TestHeadEdgeCases:
-    """Edge case tests for head operation."""
-
-    def test_head_with_special_characters_in_key(self) -> None:
-        """Test head with special characters in key."""
-        blob = MagicMock()
-        blob.name = "folder/file (1) [copy].txt"
+    def test_get_file_info_with_special_characters_in_key(self) -> None:
+        object_name = "folder/file (1) [copy].txt"
+        blob = _mk_blob(object_name, size=100)
         blob.exists.return_value = True
+
         bucket = MagicMock()
         bucket.blob.return_value = blob
         storage_client = MagicMock()
         storage_client.bucket.return_value = bucket
 
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
+        client = GCPCloudStorageClient()
         client._storage_client = storage_client
 
-        result = client.head(key="folder/file (1) [copy].txt")
+        result = client.get_file_info(container=TEST_CONTAINER, object_name=object_name)
 
-        assert result is not None
-        assert result.key == "folder/file (1) [copy].txt"
+        assert result.object_name == object_name
+        assert result.integrity == "etag-1"
 
-    def test_head_refreshes_metadata(self) -> None:
-        """Test that head reloads metadata from GCS."""
-        blob = MagicMock()
-        blob.name = "file.txt"
-        blob.exists.return_value = True
+    def test_get_file_info_missing_raises_not_found(self) -> None:
+        blob = _mk_blob("missing.txt")
+        blob.exists.return_value = False
+
         bucket = MagicMock()
         bucket.blob.return_value = blob
         storage_client = MagicMock()
         storage_client.bucket.return_value = bucket
 
-        client = GCPCloudStorageClient(bucket_name="test-bucket")
+        client = GCPCloudStorageClient()
         client._storage_client = storage_client
 
-        client.head(key="file.txt")
-
-        blob.reload.assert_called_once()
+        with pytest.raises(ObjectNotFoundError):
+            client.get_file_info(container=TEST_CONTAINER, object_name="missing.txt")

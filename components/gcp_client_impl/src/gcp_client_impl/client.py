@@ -8,13 +8,10 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import Any, BinaryIO
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-from cloud_storage_client_api import CloudStorageClient, DeleteResult, ObjectInfo
-from cloud_storage_client_api.exceptions import (
+from cloud_storage_api import CloudStorageClient, DeleteResult, ObjectInfo
+from cloud_storage_api.exceptions import (
     AuthenticationError,
     ContainerNotFoundError,
     InvalidContainerError,
@@ -26,13 +23,48 @@ from cloud_storage_client_api.exceptions import (
 )
 
 try:
+    from google.api_core import exceptions as google_exceptions
     from google.cloud import storage
     from google.oauth2 import credentials as oauth2_credentials
     from google.oauth2 import service_account
 except ImportError:  # pragma: no cover - handled by runtime guard
+    google_exceptions = None  # type: ignore[assignment]
     storage = None
     service_account = None  # type: ignore[assignment]
     oauth2_credentials = None  # type: ignore[assignment]
+
+
+def _map_provider_error(
+    exc: Exception,
+    *,
+    container: str,
+    object_name: str | None = None,
+    treat_not_found_as_container: bool = False,
+) -> Exception:
+    """Map provider-specific errors to shared cloud_storage_api exceptions."""
+    if google_exceptions is None:
+        return StorageBackendError(str(exc))
+
+    mapped: Exception
+
+    if isinstance(exc, (google_exceptions.Forbidden, google_exceptions.Unauthorized)):
+        mapped = AuthenticationError("Authentication failed or access denied by cloud provider.")
+    elif isinstance(exc, google_exceptions.NotFound):
+        if treat_not_found_as_container:
+            mapped = ContainerNotFoundError(f"Container '{container}' not found")
+        elif object_name is not None:
+            mapped = ObjectNotFoundError(f"Object '{object_name}' not found in bucket '{container}'")
+        else:
+            mapped = ContainerNotFoundError(f"Container '{container}' not found")
+    elif isinstance(exc, google_exceptions.BadRequest):
+        if object_name is not None:
+            mapped = InvalidObjectNameError(f"Invalid object name '{object_name}'")
+        else:
+            mapped = InvalidContainerError(f"Invalid container name '{container}'")
+    else:
+        mapped = StorageBackendError(f"Cloud storage backend operation failed: {exc}")
+
+    return mapped
 
 
 @dataclass(frozen=True)
@@ -139,12 +171,14 @@ class GCPCloudStorageClient(CloudStorageClient):
     def _validate_container(self, container: str) -> None:
         """Validate container name is not empty."""
         if not container:
-            raise InvalidContainerError("Container name cannot be empty.")
+            msg = "Container name cannot be empty."
+            raise InvalidContainerError(msg)
 
     def _validate_object_name(self, object_name: str) -> None:
         """Validate object name is not empty."""
         if not object_name:
-            raise InvalidObjectNameError("Object name cannot be empty.")
+            msg = "Object name cannot be empty."
+            raise InvalidObjectNameError(msg)
 
     def _get_bucket(self, container: str) -> Any:
         """Get a bucket by name."""
@@ -204,8 +238,16 @@ class GCPCloudStorageClient(CloudStorageClient):
 
         bucket = self._get_bucket(container)
         blob = bucket.blob(remote_path)
-        blob.upload_from_string(data)
-        blob.reload()
+        try:
+            blob.upload_from_string(data)
+            blob.reload()
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=remote_path,
+                treat_not_found_as_container=True,
+            ) from exc
 
         return self._blob_to_object_info(blob)
 
@@ -234,8 +276,9 @@ class GCPCloudStorageClient(CloudStorageClient):
         self._validate_container(container)
         self._validate_object_name(remote_path)
 
-        if not hasattr(file_obj, 'read') or not callable(getattr(file_obj, 'read')):
-            raise InvalidFileObjectError("file_obj must be a file-like object with a read() method.")
+        if not hasattr(file_obj, "read") or not callable(file_obj.read):
+            msg = "file_obj must be a file-like object with a read() method."
+            raise InvalidFileObjectError(msg)
 
         try:
             bucket = self._get_bucket(container)
@@ -244,7 +287,15 @@ class GCPCloudStorageClient(CloudStorageClient):
             blob.reload()
             return self._blob_to_object_info(blob)
         except (OSError, TypeError) as exc:
-            raise InvalidFileObjectError(f"Failed to upload from file object: {exc}") from exc
+            msg = f"Failed to upload from file object: {exc}"
+            raise InvalidFileObjectError(msg) from exc
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=remote_path,
+                treat_not_found_as_container=True,
+            ) from exc
 
     def download_file(
         self,
@@ -272,19 +323,47 @@ class GCPCloudStorageClient(CloudStorageClient):
         self._validate_container(container)
         self._validate_object_name(object_name)
 
+        bucket = self._get_bucket(container)
+        blob = bucket.blob(object_name)
+
         try:
-            bucket = self._get_bucket(container)
-            blob = bucket.blob(object_name)
+            exists = blob.exists()
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=object_name,
+                treat_not_found_as_container=True,
+            ) from exc
 
-            if not blob.exists():
-                msg = f"Object '{object_name}' not found in bucket '{container}'"
-                raise ObjectNotFoundError(msg)
+        if not exists:
+            msg = f"Object '{object_name}' not found in bucket '{container}'"
+            raise ObjectNotFoundError(msg)
 
+        try:
             blob.download_to_filename(file_name)
-            blob.reload()
-            return self._blob_to_object_info(blob)
         except OSError as exc:
-            raise LocalFileAccessError(f"Cannot write to file '{file_name}': {exc}") from exc
+            msg = f"Cannot write to file '{file_name}': {exc}"
+            raise LocalFileAccessError(msg) from exc
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=object_name,
+                treat_not_found_as_container=True,
+            ) from exc
+
+        try:
+            blob.reload()
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=object_name,
+                treat_not_found_as_container=True,
+            ) from exc
+
+        return self._blob_to_object_info(blob)
 
     def list_files(self, container: str, prefix: str) -> list[ObjectInfo]:
         """List files in cloud storage.
@@ -304,10 +383,13 @@ class GCPCloudStorageClient(CloudStorageClient):
         self._validate_container(container)
 
         bucket = self._get_bucket(container)
-        blobs = bucket.list_blobs(prefix=prefix)
+        try:
+            blobs = bucket.list_blobs(prefix=prefix)
+            objects = [self._blob_to_object_info(blob) for blob in blobs]
+        except Exception as exc:
+            raise _map_provider_error(exc, container=container) from exc
 
-        # GCS returns sorted results automatically
-        return [self._blob_to_object_info(blob) for blob in blobs]
+        return sorted(objects, key=lambda object_info: object_info.object_name)
 
     def delete_file(self, container: str, object_name: str) -> DeleteResult:
         """Delete a file from cloud storage.
@@ -331,16 +413,34 @@ class GCPCloudStorageClient(CloudStorageClient):
         bucket = self._get_bucket(container)
         blob = bucket.blob(object_name)
 
-        if not blob.exists():
+        try:
+            exists = blob.exists()
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=object_name,
+                treat_not_found_as_container=True,
+            ) from exc
+
+        if not exists:
             msg = f"Object '{object_name}' not found in bucket '{container}'"
             raise ObjectNotFoundError(msg)
 
         generation = blob.generation
-        blob.delete()
+        try:
+            blob.delete()
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=object_name,
+                treat_not_found_as_container=True,
+            ) from exc
 
         return {
             "deleted": True,
-            "version_id": generation,
+            "version_id": str(generation) if generation is not None else None,
             "request_charged": False,
         }
 
@@ -366,9 +466,28 @@ class GCPCloudStorageClient(CloudStorageClient):
         bucket = self._get_bucket(container)
         blob = bucket.blob(object_name)
 
-        if not blob.exists():
+        try:
+            exists = blob.exists()
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=object_name,
+                treat_not_found_as_container=True,
+            ) from exc
+
+        if not exists:
             msg = f"Object '{object_name}' not found in bucket '{container}'"
             raise ObjectNotFoundError(msg)
 
-        blob.reload()
+        try:
+            blob.reload()
+        except Exception as exc:
+            raise _map_provider_error(
+                exc,
+                container=container,
+                object_name=object_name,
+                treat_not_found_as_container=True,
+            ) from exc
+
         return self._blob_to_object_info(blob)

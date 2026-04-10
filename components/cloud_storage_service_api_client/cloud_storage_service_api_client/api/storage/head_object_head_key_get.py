@@ -8,18 +8,25 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
 from ...models.object_info_response import ObjectInfoResponse
-from ...types import Response
+from ...types import Response, UNSET, Unset
 
 
 def _get_kwargs(
     key: str,
+    *,
+    container: str | Unset = UNSET,
 ) -> dict[str, Any]:
+
+    params: dict[str, Any] = {}
+    params["container"] = container
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/head/{key}".format(
             key=quote(str(key), safe=""),
         ),
+        "params": params,
     }
 
     return _kwargs
@@ -59,6 +66,7 @@ def sync_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ObjectInfoResponse]:
     """Head Object
 
@@ -90,6 +98,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         key=key,
+        container=container,
     )
 
     response = client.get_httpx_client().request(
@@ -103,6 +112,7 @@ def sync(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> HTTPValidationError | ObjectInfoResponse | None:
     """Head Object
 
@@ -135,6 +145,7 @@ def sync(
     return sync_detailed(
         key=key,
         client=client,
+        container=container,
     ).parsed
 
 
@@ -142,6 +153,7 @@ async def asyncio_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ObjectInfoResponse]:
     """Head Object
 
@@ -173,6 +185,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         key=key,
+        container=container,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -184,6 +197,7 @@ async def asyncio(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> HTTPValidationError | ObjectInfoResponse | None:
     """Head Object
 
@@ -217,5 +231,6 @@ async def asyncio(
         await asyncio_detailed(
             key=key,
             client=client,
+            container=container,
         )
     ).parsed

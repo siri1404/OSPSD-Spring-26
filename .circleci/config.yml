@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - checkout
       - run:
@@ -16,7 +16,7 @@ jobs:
       - run:
           name: "Create Venv & Install Dependencies"
           command: |
-            uv venv --python 3.11
+            uv venv --python 3.12
             source .venv/bin/activate
             uv sync --all-packages --group dev --verbose
       - run:
@@ -33,7 +33,7 @@ jobs:
 
   lint:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -50,7 +50,7 @@ jobs:
 
   typecheck:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -62,7 +62,7 @@ jobs:
 
   unit_test:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -90,7 +90,7 @@ jobs:
 
   integration_test:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -110,7 +110,7 @@ jobs:
 
   e2e_test:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -132,7 +132,7 @@ jobs:
 
   check_render_deploy:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - run:
           name: "Wait for and Check Render Deployment"
@@ -195,3 +195,4 @@ workflows:
             branches:
               only:
                 - hw-2
+                - hw-3

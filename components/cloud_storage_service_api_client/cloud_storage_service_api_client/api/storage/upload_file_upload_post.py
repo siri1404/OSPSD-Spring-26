@@ -8,18 +8,24 @@ from ...client import AuthenticatedClient, Client
 from ...models.body_upload_file_upload_post import BodyUploadFileUploadPost
 from ...models.http_validation_error import HTTPValidationError
 from ...models.object_info_response import ObjectInfoResponse
-from ...types import Response
+from ...types import Response, UNSET, Unset
 
 
 def _get_kwargs(
     *,
     body: BodyUploadFileUploadPost,
+    container: str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
+
+    params: dict[str, Any] = {}
+    params["container"] = container
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
         "method": "post",
         "url": "/upload",
+        "params": params,
     }
 
     _kwargs["files"] = body.to_multipart()
@@ -62,6 +68,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: BodyUploadFileUploadPost,
+    container: str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ObjectInfoResponse]:
     """Upload File
 
@@ -95,6 +102,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         body=body,
+        container=container,
     )
 
     response = client.get_httpx_client().request(
@@ -108,6 +116,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: BodyUploadFileUploadPost,
+    container: str | Unset = UNSET,
 ) -> HTTPValidationError | ObjectInfoResponse | None:
     """Upload File
 
@@ -142,6 +151,7 @@ def sync(
     return sync_detailed(
         client=client,
         body=body,
+        container=container,
     ).parsed
 
 
@@ -149,6 +159,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: BodyUploadFileUploadPost,
+    container: str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ObjectInfoResponse]:
     """Upload File
 
@@ -182,6 +193,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         body=body,
+        container=container,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -193,6 +205,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: BodyUploadFileUploadPost,
+    container: str | Unset = UNSET,
 ) -> HTTPValidationError | ObjectInfoResponse | None:
     """Upload File
 
@@ -228,5 +241,6 @@ async def asyncio(
         await asyncio_detailed(
             client=client,
             body=body,
+            container=container,
         )
     ).parsed

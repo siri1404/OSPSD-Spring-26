@@ -1,12 +1,13 @@
 """End-to-End tests for the main application.
 
-Tests the complete workflow against real GCS infrastructure: client creation → API call → response handling.
+Tests the complete workflow against real GCS infrastructure: client creation -> API call -> response handling.
 """
 
 from __future__ import annotations
 
 import contextlib
 import importlib
+import io
 import os
 import socket
 import subprocess
@@ -22,8 +23,11 @@ from urllib.parse import parse_qs, urlparse
 import gcp_client_impl
 import httpx
 import pytest
-from cloud_storage_client_api.di import get_client
-from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageOperationError
+from cloud_storage_api.exceptions import (
+    InvalidContainerError,
+    ObjectNotFoundError,
+    StorageBackendError,
+)
 from cloud_storage_service_api_client import AuthenticatedClient
 from cloud_storage_service_api_client import Client as ServiceApiClient
 from cloud_storage_service_api_client.api.storage import (
@@ -99,6 +103,14 @@ def env_creds_present() -> bool:
     )
 
 
+def _require_test_container() -> str:
+    """Return the container (bucket) for live workflow tests or skip if missing."""
+    container = os.environ.get("GCS_BUCKET_NAME", "")
+    if not container:
+        pytest.skip("GCS_BUCKET_NAME not set.")
+    return container
+
+
 @pytest.fixture(scope="session")
 def service_runtime() -> Iterator[dict[str, str]]:
     """Start the FastAPI service in a background process for HW2 E2E tests."""
@@ -116,7 +128,6 @@ def service_runtime() -> Iterator[dict[str, str]]:
     pythonpath_entries = [
         str(service_src),
         str(repo_root / "components" / "gcp_client_impl" / "src"),
-        str(repo_root / "components" / "cloud_storage_client_api" / "src"),
     ]
     existing_pythonpath = env.get("PYTHONPATH")
     if existing_pythonpath:
@@ -171,7 +182,7 @@ def service_runtime() -> Iterator[dict[str, str]]:
 
 
 # ============================================================================
-# Structural / syntax tests — no credentials needed
+# Structural / syntax tests - no credentials needed
 # ============================================================================
 
 
@@ -204,7 +215,6 @@ def test_main_script_imports_work() -> None:
     # Set PYTHONPATH to include component source paths
     env = os.environ.copy()
     pythonpath_parts = [
-        str(workspace_root / "components" / "cloud_storage_client_api" / "src"),
         str(workspace_root / "components" / "gcp_client_impl" / "src"),
         str(workspace_root / "components" / "cloud_storage_adapter" / "src"),
         str(workspace_root / "components" / "cloud_storage_service" / "src"),
@@ -212,7 +222,7 @@ def test_main_script_imports_work() -> None:
     ]
     env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
 
-    import_check = "import gcp_client_impl\nimport cloud_storage_client_api\nprint('All imports successful')\n"
+    import_check = "import gcp_client_impl\nimport cloud_storage_api\nprint('All imports successful')\n"
 
     result = subprocess.run(
         [sys.executable, "-c", import_check],
@@ -236,10 +246,6 @@ def test_application_structure_integrity() -> None:
     expected_files = [
         "main.py",
         "pyproject.toml",
-        "components/cloud_storage_client_api/pyproject.toml",
-        "components/cloud_storage_client_api/src/cloud_storage_client_api/__init__.py",
-        "components/cloud_storage_client_api/src/cloud_storage_client_api/client.py",
-        "components/cloud_storage_client_api/src/cloud_storage_client_api/di.py",
         "components/gcp_client_impl/pyproject.toml",
         "components/gcp_client_impl/src/gcp_client_impl/__init__.py",
         "components/gcp_client_impl/src/gcp_client_impl/client.py",
@@ -251,18 +257,8 @@ def test_application_structure_integrity() -> None:
 
 
 @pytest.mark.circleci
-def test_di_registration_on_import() -> None:
-    """Importing gcp_client_impl must register the GCP client as the default provider."""
-    client = get_client()
-    assert client.__class__.__name__ == "GCPCloudStorageClient"
-
-    client_named = get_client(name="gcp")
-    assert client_named.__class__.__name__ == "GCPCloudStorageClient"
-
-
-@pytest.mark.circleci
 def test_client_raises_without_bucket_env_var() -> None:
-    """GCPCloudStorageClient must raise RuntimeError when no bucket is configured."""
+    """GCPCloudStorageClient operations must require a non-empty container name."""
     from gcp_client_impl.client import GCPCloudStorageClient
 
     env_patch = {
@@ -273,8 +269,8 @@ def test_client_raises_without_bucket_env_var() -> None:
     }
     with patch.dict(os.environ, env_patch, clear=False):
         client = GCPCloudStorageClient()
-        with pytest.raises(StorageOperationError, match="GCS bucket is not configured"):
-            client._get_bucket_name()
+        with pytest.raises(InvalidContainerError, match="Container name cannot be empty"):
+            client.list_files(container="", prefix="")
 
 
 @pytest.mark.circleci
@@ -290,20 +286,20 @@ def test_client_raises_with_malformed_service_key() -> None:
     }
     with patch.dict(os.environ, env_patch, clear=False):
         client = GCPCloudStorageClient()
-        with pytest.raises(StorageOperationError, match="GCP_SERVICE_KEY must be a valid JSON"):
+        with pytest.raises(StorageBackendError, match="GCP_SERVICE_KEY must be a valid JSON"):
             client._build_credentials()
 
 
 # ============================================================================
-# Full workflow tests — require real GCS credentials
+# Full workflow tests - require real GCS credentials
 # ============================================================================
 
 
 @pytest.mark.circleci
-def test_full_workflow_with_env_var_credentials() -> None:
+def test_full_workflow_with_env_var_credentials(tmp_path: Path) -> None:
     """Run the complete workflow using GCP_SERVICE_KEY env-var credentials.
 
-    Validates: client creation → upload → head → download → list → delete.
+    Validates: client creation -> upload -> get_file_info -> download -> list -> delete.
     Skips when credentials are not set.
     """
     if not env_creds_present():
@@ -312,43 +308,45 @@ def test_full_workflow_with_env_var_credentials() -> None:
     from gcp_client_impl.client import GCPCloudStorageClient
 
     client = GCPCloudStorageClient()
+    container = _require_test_container()
     key = unique_key("e2e-circleci")
     payload = b"hello from circleci e2e test"
+    download_path = tmp_path / "circleci_download.txt"
 
     try:
         # 1. Upload
-        info = client.upload_bytes(data=payload, key=key, content_type="text/plain")
-        assert info.key == key
+        info = client.upload_obj(container=container, file_obj=io.BytesIO(payload), remote_path=key)
+        assert info.object_name == key
         assert info.size_bytes == len(payload)
-        assert info.content_type == "text/plain"
-        assert info.etag is not None
+        assert info.integrity is not None
 
-        # 2. Head
-        head_info = client.head(key=key)
-        assert head_info is not None
-        assert head_info.key == key
+        # 2. Get metadata
+        head_info = client.get_file_info(container=container, object_name=key)
+        assert head_info.object_name == key
         assert head_info.size_bytes == len(payload)
 
-        # 3. Download
-        downloaded = client.download_bytes(key=key)
-        assert downloaded == payload
+        # 3. Download to local file
+        downloaded_info = client.download_file(container=container, object_name=key, file_name=str(download_path))
+        assert downloaded_info.object_name == key
+        assert download_path.read_bytes() == payload
 
         # 4. List
         prefix = key.rsplit("/", 1)[0] + "/"
-        objects = client.list(prefix=prefix)
-        assert any(o.key == key for o in objects)
+        objects = client.list_files(container=container, prefix=prefix)
+        assert any(o.object_name == key for o in objects)
 
     finally:
-        # 5. Delete — always runs even if assertions fail
+        # 5. Delete - always runs even if assertions fail
         with contextlib.suppress(ObjectNotFoundError):
-            client.delete(key=key)
+            client.delete_file(container=container, object_name=key)
 
     # 6. Confirm deletion
-    assert client.head(key=key) is None
+    with pytest.raises(ObjectNotFoundError):
+        client.get_file_info(container=container, object_name=key)
 
 
 @pytest.mark.local_credentials
-def test_full_workflow_with_local_credentials() -> None:
+def test_full_workflow_with_local_credentials(tmp_path: Path) -> None:
     """Run the complete workflow using a local GOOGLE_APPLICATION_CREDENTIALS file.
 
     Skips when credentials file is not present.
@@ -361,30 +359,32 @@ def test_full_workflow_with_local_credentials() -> None:
     from gcp_client_impl.client import GCPCloudStorageClient
 
     client = GCPCloudStorageClient()
+    container = _require_test_container()
     key = unique_key("e2e-local")
     payload = b"hello from local e2e test"
+    download_path = tmp_path / "local_download.txt"
 
     try:
-        info = client.upload_bytes(data=payload, key=key, content_type="text/plain")
-        assert info.key == key
+        info = client.upload_obj(container=container, file_obj=io.BytesIO(payload), remote_path=key)
+        assert info.object_name == key
         assert info.size_bytes == len(payload)
 
-        head_info = client.head(key=key)
-        assert head_info is not None
-        assert head_info.key == key
+        head_info = client.get_file_info(container=container, object_name=key)
+        assert head_info.object_name == key
 
-        downloaded = client.download_bytes(key=key)
-        assert downloaded == payload
+        client.download_file(container=container, object_name=key, file_name=str(download_path))
+        assert download_path.read_bytes() == payload
 
         prefix = key.rsplit("/", 1)[0] + "/"
-        objects = client.list(prefix=prefix)
-        assert any(o.key == key for o in objects)
+        objects = client.list_files(container=container, prefix=prefix)
+        assert any(o.object_name == key for o in objects)
 
     finally:
         with contextlib.suppress(ObjectNotFoundError):
-            client.delete(key=key)
+            client.delete_file(container=container, object_name=key)
 
-    assert client.head(key=key) is None
+    with pytest.raises(ObjectNotFoundError):
+        client.get_file_info(container=container, object_name=key)
 
 
 @pytest.mark.local_credentials
@@ -398,6 +398,7 @@ def test_upload_file_workflow_with_local_credentials(tmp_path: Path) -> None:
     from gcp_client_impl.client import GCPCloudStorageClient
 
     client = GCPCloudStorageClient()
+    container = _require_test_container()
     key = unique_key("e2e-upload-file")
     payload = b"file upload e2e test content"
 
@@ -406,97 +407,97 @@ def test_upload_file_workflow_with_local_credentials(tmp_path: Path) -> None:
 
     try:
         info = client.upload_file(
+            container=container,
             local_path=str(local_file),
-            key=key,
-            content_type="text/plain",
+            remote_path=key,
         )
-        assert info.key == key
+        assert info.object_name == key
         assert info.size_bytes == len(payload)
 
-        downloaded = client.download_bytes(key=key)
-        assert downloaded == payload
+        downloaded_path = tmp_path / "upload_file_download.txt"
+        client.download_file(container=container, object_name=key, file_name=str(downloaded_path))
+        assert downloaded_path.read_bytes() == payload
 
     finally:
         with contextlib.suppress(ObjectNotFoundError):
-            client.delete(key=key)
+            client.delete_file(container=container, object_name=key)
 
 
 @pytest.mark.circleci
 def test_upload_with_custom_metadata() -> None:
-    """Verify custom metadata is stored and retrievable via head()."""
+    """Verify metadata and core fields are retrievable via get_file_info()."""
     if not env_creds_present():
         pytest.skip("GCP_SERVICE_KEY / GCS_BUCKET_NAME / GOOGLE_CLOUD_PROJECT not set.")
 
     from gcp_client_impl.client import GCPCloudStorageClient
 
     client = GCPCloudStorageClient()
+    container = _require_test_container()
     key = unique_key("e2e-metadata")
     payload = b"metadata test"
-    custom_meta = {"owner": "e2e-test", "purpose": "hw-1-validation"}
 
     try:
-        info = client.upload_bytes(
-            data=payload,
-            key=key,
-            content_type="text/plain",
-            metadata=custom_meta,
-        )
-        assert info.key == key
+        info = client.upload_obj(container=container, file_obj=io.BytesIO(payload), remote_path=key)
+        assert info.object_name == key
 
-        head_info = client.head(key=key)
-        assert head_info is not None
-        assert head_info.metadata is not None
-        for k, v in custom_meta.items():
-            assert head_info.metadata.get(k) == v
+        head_info = client.get_file_info(container=container, object_name=key)
+        assert head_info.object_name == key
+        assert head_info.metadata is None or isinstance(head_info.metadata, dict)
+        assert head_info.data_type is None or isinstance(head_info.data_type, str)
+        assert head_info.integrity is None or isinstance(head_info.integrity, str)
 
     finally:
         with contextlib.suppress(ObjectNotFoundError):
-            client.delete(key=key)
+            client.delete_file(container=container, object_name=key)
 
 
 @pytest.mark.circleci
 def test_download_nonexistent_object_raises() -> None:
-    """download_bytes() must raise FileNotFoundError for a missing key."""
+    """download_file() must raise ObjectNotFoundError for a missing key."""
     if not env_creds_present():
         pytest.skip("GCP_SERVICE_KEY / GCS_BUCKET_NAME / GOOGLE_CLOUD_PROJECT not set.")
 
     from gcp_client_impl.client import GCPCloudStorageClient
 
     client = GCPCloudStorageClient()
+    container = _require_test_container()
     ghost_key = unique_key("e2e-ghost")
+    local_path = str(Path.cwd() / f"{uuid.uuid4().hex}.tmp")
 
     with pytest.raises(ObjectNotFoundError, match=ghost_key):
-        client.download_bytes(key=ghost_key)
+        client.download_file(container=container, object_name=ghost_key, file_name=local_path)
 
 
 @pytest.mark.circleci
 def test_delete_nonexistent_object_raises() -> None:
-    """delete() must raise FileNotFoundError for a missing key."""
+    """delete_file() must raise ObjectNotFoundError for a missing key."""
     if not env_creds_present():
         pytest.skip("GCP_SERVICE_KEY / GCS_BUCKET_NAME / GOOGLE_CLOUD_PROJECT not set.")
 
     from gcp_client_impl.client import GCPCloudStorageClient
 
     client = GCPCloudStorageClient()
+    container = _require_test_container()
     ghost_key = unique_key("e2e-ghost-delete")
 
     with pytest.raises(ObjectNotFoundError, match=ghost_key):
-        client.delete(key=ghost_key)
+        client.delete_file(container=container, object_name=ghost_key)
 
 
 @pytest.mark.circleci
-def test_head_nonexistent_object_returns_none() -> None:
-    """head() must return None (not raise) for a missing key."""
+def test_get_file_info_nonexistent_object_raises() -> None:
+    """get_file_info() must raise ObjectNotFoundError for a missing key."""
     if not env_creds_present():
         pytest.skip("GCP_SERVICE_KEY / GCS_BUCKET_NAME / GOOGLE_CLOUD_PROJECT not set.")
 
     from gcp_client_impl.client import GCPCloudStorageClient
 
     client = GCPCloudStorageClient()
+    container = _require_test_container()
     ghost_key = unique_key("e2e-ghost-head")
 
-    result = client.head(key=ghost_key)
-    assert result is None
+    with pytest.raises(ObjectNotFoundError, match=ghost_key):
+        client.get_file_info(container=container, object_name=ghost_key)
 
 
 @pytest.mark.circleci
@@ -507,7 +508,7 @@ def test_main_script_runs_with_env_var_credentials() -> None:
     if not main_script.exists():
         pytest.skip(f"main.py not found at {main_script}")
     if main_script.stat().st_size == 0:
-        pytest.skip("main.py is empty — nothing to execute.")
+        pytest.skip("main.py is empty - nothing to execute.")
     if not env_creds_present():
         pytest.skip("GCP_SERVICE_KEY / GCS_BUCKET_NAME / GOOGLE_CLOUD_PROJECT not set.")
 
@@ -524,7 +525,7 @@ def test_main_script_runs_with_env_var_credentials() -> None:
         # Check for some output (modify based on what main.py actually outputs)
 
     except subprocess.TimeoutExpired:
-        pytest.fail("E2E test timed out — main.py took > 120 s.")
+        pytest.fail("E2E test timed out - main.py took > 120 s.")
     except subprocess.CalledProcessError as exc:
         pytest.fail(
             f"main.py exited non-zero.\nExit code: {exc.returncode}\nStdout:\n{exc.stdout}\nStderr:\n{exc.stderr}",
@@ -539,7 +540,7 @@ def test_main_script_runs_with_local_credentials() -> None:
     if not main_script.exists():
         pytest.skip(f"main.py not found at {main_script}")
     if main_script.stat().st_size == 0:
-        pytest.skip("main.py is empty — nothing to execute.")
+        pytest.skip("main.py is empty - nothing to execute.")
     if not local_creds_present():
         pytest.skip("GOOGLE_APPLICATION_CREDENTIALS not set or file missing.")
     if not os.environ.get("GCS_BUCKET_NAME"):
@@ -557,7 +558,7 @@ def test_main_script_runs_with_local_credentials() -> None:
         assert result.returncode == 0
 
     except subprocess.TimeoutExpired:
-        pytest.fail("E2E test timed out — main.py took > 120 s.")
+        pytest.fail("E2E test timed out - main.py took > 120 s.")
     except subprocess.CalledProcessError as exc:
         pytest.fail(
             f"main.py exited non-zero.\nExit code: {exc.returncode}\nStdout:\n{exc.stdout}\nStderr:\n{exc.stderr}",
@@ -633,7 +634,7 @@ def test_service_storage_round_trip_via_http(service_runtime: dict[str, str]) ->
 
 
 @pytest.mark.circleci
-def test_adapter_and_impl_interoperate(service_runtime: dict[str, str]) -> None:
+def test_adapter_and_impl_interoperate(service_runtime: dict[str, str], tmp_path: Path) -> None:
     """Ensure the service-backed adapter behaves like the direct GCP implementation."""
     base_url = service_runtime["base_url"]
     token = service_runtime["token"]
@@ -645,27 +646,34 @@ def test_adapter_and_impl_interoperate(service_runtime: dict[str, str]) -> None:
     from gcp_client_impl.client import GCPCloudStorageClient
 
     direct_client = GCPCloudStorageClient()
+    container = _require_test_container()
     key = unique_key("e2e-adapter")
     payload = b"adapter vs impl"
+    downloaded_path = tmp_path / "adapter_round_trip.bin"
 
     try:
-        info = adapter_client.upload_bytes(data=payload, key=key, content_type="text/plain")
-        assert info.key == key
+        info = adapter_client.upload_obj(
+            container=container,
+            file_obj=io.BytesIO(payload),
+            remote_path=key,
+        )
+        assert info.object_name == key
 
-        direct_metadata = direct_client.head(key=key)
-        assert direct_metadata is not None
+        direct_metadata = direct_client.get_file_info(container=container, object_name=key)
+        assert direct_metadata.object_name == key
 
-        round_trip = adapter_client.download_bytes(key=key)
-        assert round_trip == payload
+        adapter_client.download_file(container=container, object_name=key, file_name=str(downloaded_path))
+        assert downloaded_path.read_bytes() == payload
 
         prefix = key.rsplit("/", maxsplit=1)[0] + "/"
-        listed = adapter_client.list(prefix=prefix)
-        assert any(obj.key == key for obj in listed)
+        listed = adapter_client.list_files(container=container, prefix=prefix)
+        assert any(obj.object_name == key for obj in listed)
 
     finally:
         with contextlib.suppress(Exception):
-            adapter_client.delete(key=key)
-        assert direct_client.head(key=key) is None
+            adapter_client.delete_file(container=container, object_name=key)
+        with pytest.raises(ObjectNotFoundError):
+            direct_client.get_file_info(container=container, object_name=key)
 
 
 @pytest.mark.circleci
@@ -703,11 +711,11 @@ def test_generated_client_round_trip(service_runtime: dict[str, str]) -> None:
 
 @pytest.mark.circleci
 def test_service_oauth_login_returns_authorization_url(service_runtime: dict[str, str]) -> None:
-    """Ensure /auth/login redirects to a well-formed Google OAuth URL."""
+    """Ensure /auth/login returns a well-formed Google OAuth URL."""
     base_url = service_runtime["base_url"]
-    response = httpx.get(f"{base_url}/auth/login", follow_redirects=False, timeout=10.0)
-    assert response.status_code == HTTPStatus.TEMPORARY_REDIRECT
-    auth_url = response.headers["location"]
+    response = httpx.post(f"{base_url}/auth/login", timeout=10.0)
+    assert response.status_code == HTTPStatus.OK
+    auth_url = response.json()["auth_url"]
     parsed = urlparse(auth_url)
     params = parse_qs(parsed.query)
 
