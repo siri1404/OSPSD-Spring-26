@@ -3,39 +3,59 @@
 ```
 OSPSD-Spring-26/
 ├── components/
-│   ├── cloud_storage_client_api/          # Interface component
-│   │   ├── src/cloud_storage_client_api/
-│   │   │   ├── __init__.py               # Public exports (CloudStorageClient, ObjectInfo, get_client)
-│   │   │   ├── client.py                 # CloudStorageClient ABC + ObjectInfo
-│   │   │   └── di.py                     # Dependency injection factory
-│   │   ├── tests/                        # Unit tests for interface
+│   ├── gcp_client_impl/                        # GCP implementation of shared ABC
+│   │   ├── src/gcp_client_impl/
+│   │   │   ├── __init__.py                     # Exports GCPCloudStorageClient
+│   │   │   └── client.py                       # CloudStorageClient implementation
+│   │   ├── tests/
 │   │   ├── pyproject.toml
 │   │   └── README.md
 │   │
-│   └── gcp_client_impl/                   # GCP implementation
-│       ├── src/gcp_client_impl/
-│       │   ├── __init__.py               # Auto-registers with DI
-│       │   └── client.py                 # GCPCloudStorageClient implementation
-│       ├── tests/                        # Unit tests for GCP implementation
+│   ├── cloud_storage_adapter/                  # HTTP adapter implementing shared ABC
+│   │   ├── src/cloud_storage_adapter/
+│   │   │   ├── __init__.py                     # Exports CloudStorageAdapter
+│   │   │   └── adapter.py                      # CloudStorageClient over HTTP
+│   │   ├── tests/
+│   │   ├── pyproject.toml
+│   │   └── README.md
+│   │
+│   ├── cloud_storage_service/                  # FastAPI service wrapping GCP impl
+│   │   ├── src/cloud_storage_service/
+│   │   │   ├── __init__.py
+│   │   │   ├── main.py                         # Endpoints
+│   │   │   ├── auth.py                         # OAuth 2.0 authentication
+│   │   │   ├── models.py                       # Pydantic request/response models
+│   │   │   └── sessions.py                     # In-memory session store
+│   │   ├── tests/
+│   │   ├── pyproject.toml
+│   │   └── README.md
+│   │
+│   └── cloud_storage_service_api_client/       # Auto-generated OpenAPI client
+│       ├── cloud_storage_service_api_client/
+│       │   ├── api/                            # Endpoint wrappers
+│       │   ├── models/                         # Response/request models
+│       │   ├── client.py                       # Client + AuthenticatedClient
+│       │   └── types.py                        # Shared types (File, Response, Unset)
 │       ├── pyproject.toml
 │       └── README.md
 │
 ├── tests/
-│   ├── integration/                      # Integration tests (DI, provider interactions)
+│   ├── integration/                            # Shared contract compliance tests
 │   │   └── test_di.py
-│   └── e2e/                              # End-to-end tests (real GCS)
+│   └── e2e/                                    # Full workflow tests
 │       └── test_e2e.py
 │
-├── docs/                                 # Full documentation
-│   ├── index.md                         # Landing page with navigation
-│   ├── CONTRIBUTING.md                  # Development workflow and standards
-│   ├── testing.md                       # Test execution, setup, and debugging
-│   ├── circleci-setup.md                # CI/CD configuration and troubleshooting
-│   ├── structure.md                     # Project directory layout
-│   └── design.md                        # Architecture patterns and design decisions
+├── docs/                                       # Documentation
+│   ├── index.md
+│   ├── CONTRIBUTING.md
+│   ├── testing.md
+│   ├── circleci-setup.md
+│   ├── structure.md
+│   ├── design.md
+│   └── components/                             # Per-component docs for mkdocs
 │
 ├── .circleci/
-│   └── config.yml                        # CI/CD pipeline
+│   └── config.yml                              # CI/CD pipeline
 │
 ├── .github/
 │   ├── pull_request_template.md
@@ -43,8 +63,13 @@ OSPSD-Spring-26/
 │       ├── bug_report.md
 │       └── feature_request.md
 │
-├── mkdocs.yml                            # Documentation site configuration
-├── pyproject.toml                        # Root workspace config
-├── .env.example                          # Environment variable template
-└── README.md                             # Entire project README
+├── mkdocs.yml                                  # Documentation site config
+├── pyproject.toml                              # Root workspace config (ruff, mypy, pytest, coverage)
+├── main.py                                     # Sanity check entry point
+├── openapi.json                                # OpenAPI spec for client generation
+├── Dockerfile                                  # Container build
+├── render.yaml                                 # Render deployment config
+└── README.md                                   # Project overview
 ```
+
+External dependency: The shared `cloud_storage_api` interface is not in this repo. It is pulled from https://github.com/2SpaceMasterRace/ospsd-cloud-storage as a pinned git dependency (`v1.0.0`).

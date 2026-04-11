@@ -18,7 +18,7 @@ This is a RESTful API for cloud storage operations, built with FastAPI and desig
 
 ## Example usage (with curl)
 
-**Note:** For local testing, set `DEV_AUTH_TOKEN` and `DEV_ACCESS_TOKEN` in your `.env` file first.
+**Note:** For local testing, set `DEV_AUTH_TOKEN` in your `.env` file first.
 
 ```bash
 # Health check (no auth required)
@@ -48,7 +48,7 @@ curl -X DELETE https://cloud-storage-service-mcni.onrender.com/delete/sample.txt
 - `GOOGLE_CLOUD_PROJECT`: GCP project ID
 - `GOOGLE_APPLICATION_CREDENTIALS` or `GCP_SERVICE_KEY`: Service account credentials
 - `DEV_AUTH_TOKEN`: Token for bypassing OAuth in local/dev testing (must be explicitly set, no default)
-- `DEV_ACCESS_TOKEN`: Token for bypassing OAuth in local/dev testing (must be explicitly set, no default)
+- `ENVIRONMENT`: Set to `development` or `test` to enable dev token bypass (defaults to `production`)
 
 ## Running locally
 1. Install dependencies (see root README)
@@ -57,4 +57,4 @@ curl -X DELETE https://cloud-storage-service-mcni.onrender.com/delete/sample.txt
 
 ## Notes
 - This is a student project. If you find bugs, check the error handlers in `main.py`.
-- For more details, see the root README and the `cloud_storage_client_api` docs.
+- For more details, see the root README and the `cloud_storage_api` docs.

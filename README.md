@@ -1,11 +1,11 @@
 # OSPSD Spring '26 - Cloud Storage Client
 
 > **⚠️ HW3 Status:** This project has been refactored to align with the shared Cloud Storage API contract (v1.0.0).  
-> See [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md), [VERTICAL_API_MEMO.md](VERTICAL_API_MEMO.md), [DESIGN.md](DESIGN.md), and [docs/design.md](docs/design.md) for details.
+> See [PLAN_OF_ACTION.md](PLAN_OF_ACTION.md) and [docs/design.md](docs/design.md) for details.
 
-[![CircleCI](https://dl.circleci.com/status-badge/img/gh/siri1404/OSPSD-Spring-26/tree/hw-2.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/siri1404/OSPSD-Spring-26/tree/hw-2)
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/siri1404/OSPSD-Spring-26/tree/hw-3.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/siri1404/OSPSD-Spring-26/tree/hw-3)
 ![Coverage](https://img.shields.io/badge/coverage-85%25%2B-brightgreen)
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-brightgreen)
 
 
@@ -140,7 +140,7 @@ client.delete_file(container=container, object_name=remote_path)
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.12 or higher
 - `uv` package manager (installation: https://github.com/astral-sh/uv)
 - Git
 - GCP account with Cloud Storage enabled (for E2E tests)
@@ -320,7 +320,7 @@ Full documentation is available in the `docs/` directory:
 - [Testing Guide](docs/testing.md) — Test execution, environment setup, credentials, debugging
 - [CircleCI Setup](docs/circleci-setup.md) — CI configuration, environment variables, troubleshooting
 - [Project Structure](docs/structure.md) — Directory layout and component organization
-- [Architecture & Design](docs/design.md) — Design patterns, DI system, authentication modes, extensibility
+- [Architecture & Design](docs/design.md) — Design patterns, authentication modes, and extensibility
 
 **Component-Specific Documentation:**
 - [Cloud Storage Adapter](components/cloud_storage_adapter/README.md) — Service-backed shared API implementation
@@ -332,7 +332,7 @@ Full documentation is available in the `docs/` directory:
 
 ## CI/CD Pipeline
 
-CircleCI continuously validates code on the `hw-2` branch:
+CircleCI continuously validates code on the `hw-3` branch:
 
 - Build: Environment setup with `uv`
 - Lint: Code style checking with `ruff`
@@ -402,7 +402,7 @@ See the GCP implementation as a template.
 | `RENDER_SERVICE_URL` | (CircleCI only) Base URL for smoke test (e.g., https://cloud-storage-service-mcni.onrender.com) |
 
 ### CI/CD Pipeline (CircleCI)
-- On every push to `hw-2`:
+- On every push to `hw-3`:
   - Build, lint, typecheck, unit/integration/e2e test
   - Deploys to Render using API
   - Verifies `/health` endpoint
