@@ -4,7 +4,7 @@ This document explains how to configure CircleCI for the Cloud Storage Client pr
 
 ## Overview
 
-The pipeline is defined in `.circleci/config.yml` and runs on every branch except `main`.  It has six jobs:
+The pipeline is defined in `.circleci/config.yml` and runs on every branch except `main`. It has seven jobs:
 
 | Job | What it does |
 |---|---|
@@ -14,6 +14,7 @@ The pipeline is defined in `.circleci/config.yml` and runs on every branch excep
 | `unit_test` | `pytest components/` with coverage — must reach 85 % |
 | `integration_test` | `pytest tests/integration/` — no credentials needed |
 | `e2e_test` | `pytest tests/e2e/` — skips credential-dependent tests when env vars are absent |
+| `check_render_deploy` | Polls Render API to verify deployment succeeded (only on `hw-2` and `hw-3` branches) |
 
 ## Pipeline
 
@@ -21,7 +22,7 @@ All jobs run sequentially on every non-`main` branch:
 
 ```
 build → lint ─┐
-              ├─ (parallel) → unit_test → integration_test → e2e_test
+              ├─ (parallel) → unit_test → integration_test → e2e_test → check_render_deploy
 typecheck ────┘
 ```
 
@@ -45,6 +46,8 @@ Add these in CircleCI **Project Settings** → **Environment Variables**:
 | `GCP_SERVICE_KEY` | Base64-encoded GCP service account JSON key | E2E credential tests |
 | `GCS_BUCKET_NAME` | Your test GCS bucket name | E2E credential tests |
 | `GOOGLE_CLOUD_PROJECT` | Your GCP project ID | E2E credential tests |
+| `RENDER_API_KEY` | Render Personal Access Token | Deploy verification |
+| `RENDER_SERVICE_ID` | Render web service ID | Deploy verification |
 
 E2E tests that need credentials **skip** cleanly when these are not set — the pipeline still passes without them.
 

@@ -4,7 +4,7 @@
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/) package manager
 - Git configured with your GitHub account
 
@@ -16,48 +16,44 @@ cd OSPSD-Spring-26
 uv sync --all-packages --group dev
 ```
 
-This installs both workspace packages (`cloud_storage_client_api` and `gcp_client_impl`) plus all dev tools (`pytest`, `ruff`, `mypy`, etc.).
+This installs all workspace packages (`gcp_client_impl`, `cloud_storage_adapter`, `cloud_storage_service`, `cloud_storage_service_api_client`) plus the shared `cloud_storage_api` git dependency and all dev tools (`pytest`, `ruff`, `mypy`, etc.).
 
 ## Project Structure
 
 ```
 OSPSD-Spring-26/
 ├── components/
-│   ├── cloud_storage_client_api/       # Abstract API package
-│   │   ├── src/cloud_storage_client_api/
-│   │   │   ├── client.py              # CloudStorageClient ABC + ObjectInfo
-│   │   │   ├── di.py                  # DI registry (get_client / register / override)
+│   ├── gcp_client_impl/                    # GCP implementation of shared ABC
+│   │   ├── src/gcp_client_impl/
+│   │   │   ├── client.py                   # GCPCloudStorageClient
 │   │   │   └── __init__.py
 │   │   └── tests/
-│   │       ├── test_client_api.py
-│   │       └── test_get_client.py
-│   └── gcp_client_impl/               # GCP implementation package
-│       ├── src/gcp_client_impl/
-│       │   ├── client.py              # GCPCloudStorageClient
-│       │   └── __init__.py            # Auto-registers on import
-│       └── tests/
-│           ├── test_config.py
-│           ├── test_credentials.py
-│           ├── test_object_info.py
-│           ├── test_operations.py
-│           ├── test_registration.py
-│           └── test_storage_client.py
+│   ├── cloud_storage_adapter/              # HTTP adapter implementing shared ABC
+│   │   ├── src/cloud_storage_adapter/
+│   │   │   ├── adapter.py                  # CloudStorageAdapter
+│   │   │   └── __init__.py
+│   │   └── tests/
+│   ├── cloud_storage_service/              # FastAPI service wrapping GCP impl
+│   │   ├── src/cloud_storage_service/
+│   │   │   ├── main.py                     # Endpoints
+│   │   │   ├── auth.py                     # OAuth 2.0
+│   │   │   ├── models.py                   # Pydantic models
+│   │   │   └── sessions.py                 # Session store
+│   │   └── tests/
+│   └── cloud_storage_service_api_client/   # Auto-generated OpenAPI client
 ├── tests/
 │   ├── integration/
-│   │   └── test_di.py                 # Cross-component DI + thread-safety tests
+│   │   └── test_di.py                      # Shared contract compliance tests
 │   └── e2e/
-│       └── test_e2e.py                # Full workflow tests against real GCS
+│       └── test_e2e.py                     # Full workflow tests
 ├── docs/
-│   ├── CONTRIBUTING.md                # This file
-│   ├── testing.md                     # Test strategy, markers, and commands
-│   ├── circleci-setup.md              # CI/CD pipeline and environment setup
-│   ├── design.md                      # Architecture patterns and design decisions
-│   ├── structure.md                   # Project directory layout
-│   └── index.md                       # Landing page with navigation
 ├── .circleci/
 │   └── config.yml
-└── pyproject.toml                     # Workspace config, ruff, mypy, pytest, coverage
+├── pyproject.toml                          # Workspace config, ruff, mypy, pytest, coverage
+└── main.py                                 # Sanity check entry point
 ```
+
+External dependency: The shared `cloud_storage_api` interface is pulled from https://github.com/2SpaceMasterRace/ospsd-cloud-storage (pinned to `v1.0.0`).
 
 ## Development Workflow
 
@@ -78,8 +74,7 @@ uv run pytest components/ --cov=components/ --cov-fail-under=85
 uv run pytest tests/integration/ -v --no-cov
 ```
 
-For the full test command reference and marker guide, see [testing.md](testing.md).
-For running E2E tests with real GCS credentials, see [circleci-setup.md](circleci-setup.md).
+For the full test command reference, see [testing.md](testing.md). For CI/CD setup, see [circleci-setup.md](circleci-setup.md).
 
 ### Commit Messages
 
@@ -119,18 +114,20 @@ Use conventional commit format:
 Public classes and methods must have Google-style docstrings:
 
 ```python
-def upload_bytes(self, *, data: bytes, key: str) -> ObjectInfo:
-    """Upload raw bytes to storage.
+def upload_file(self, container: str, local_path: str, remote_path: str) -> ObjectInfo:
+    """Upload a local file to cloud storage.
 
     Args:
-        data: The bytes to upload.
-        key: The object key/path in storage.
+        container: Bucket/container name.
+        local_path: Path to the local file.
+        remote_path: Destination key in storage.
 
     Returns:
         ObjectInfo with metadata about the uploaded object.
 
     Raises:
-        FileNotFoundError: If the object does not exist.
+        LocalFileAccessError: If local_path cannot be read.
+        ObjectNotFoundError: If the container does not exist.
     """
 ```
 

@@ -11,7 +11,7 @@ This package is a Python client for talking to the Cloud Storage Service REST AP
 ```python
 from cloud_storage_service_api_client import AuthenticatedClient
 
-client = AuthenticatedClient(base_url="https://cloud-storage-service-mcni.onrender.com", token="dev-token-12345")
+client = AuthenticatedClient(base_url="https://cloud-storage-service-mcni.onrender.com", token="your-bearer-token")
 
 # Example: download a file
 from cloud_storage_service_api_client.api.storage import download_file

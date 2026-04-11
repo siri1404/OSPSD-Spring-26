@@ -2,488 +2,149 @@
 
 ## Overview
 
-This document explains the architectural design decisions for the OSPSD Spring '26 Cloud Storage Client project, including why certain patterns were chosen and how new providers can be added.
-
----
+This project implements a provider-agnostic cloud storage system that aligns with the shared `cloud_storage_api` contract (`v1.0.0`) defined by the Cloud Storage vertical (Teams 2, 6, 10). The architecture separates the shared interface from provider-specific implementations, enabling seamless provider switching.
 
 ## Design Principles
 
-### 1. Separation of Concerns
+### 1. Shared Contract
 
-The project separates the **interface contract** from **provider implementations**:
+The interface is maintained in a cross-team repository and consumed as a git dependency:
 
-- **Interface** (`cloud_storage_client_api`): Defines what operations a storage client must support
-- **Implementation** (`gcp_client_impl`): Provides concrete implementation for a specific provider
+```toml
+cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
+```
 
-**Benefit:** Consumers write code against the interface, not the implementation. Switching providers requires only changing which package is imported.
+The shared `CloudStorageClient` ABC defines 6 methods. All teams implement the same contract: GCP (Team 6), AWS S3 (Teams 2, 10).
 
-### 2. Abstraction Barriers
+### 2. Provider Agnosticism
 
-The interface package has **zero dependencies** on external SDKs:
+Consumer code depends only on the shared interface:
 
 ```python
-# cloud_storage_client_api/client.py
-from abc import ABC, abstractmethod  # Only stdlib
+from cloud_storage_api import CloudStorageClient, ObjectInfo
 
-class CloudStorageClient(ABC):
-    @abstractmethod
-    def upload_bytes(self, *, data: bytes, key: str, ...) -> ObjectInfo:
-        pass
+
+def process_files(client: CloudStorageClient, container: str) -> None:
+    objects = client.list_files(container=container, prefix="reports/")
+    for obj in objects:
+        print(f"{obj.object_name}: {obj.size_bytes} bytes")
 ```
 
-The implementation package provides the provider-specific logic:
+Switching between GCP, AWS, or the HTTP adapter requires changing only which implementation is instantiated. Consumer code stays identical.
 
-```python
-# gcp_client_impl/client.py
-from google.cloud import storage  # Provider dependency here
+### 3. Container Per Method
 
-class GCPCloudStorageClient(CloudStorageClient):
-    def upload_bytes(self, *, data: bytes, key: str, ...) -> ObjectInfo:
-        # Actual GCS implementation
-```
+The bucket/container is passed on every method call rather than configured at construction. This keeps the interface stateless and allows a single client instance to operate across multiple containers.
 
-**Benefit:** 
-- No dependency leakage into the interface
-- Interface remains stable as providers evolve
-- Easy to test interface without downloading provider SDKs
+### 4. No DI in Shared Package
 
-### 3. Dependency Injection (DI)
-
-The project uses a **registry-based DI pattern** with context variable overrides:
-
-```python
-# Register a provider
-def register_get_client(fn: GetClient, name: str = "default") -> None:
-    _registry[name] = fn
-
-# Retrieve a provider
-def get_client(name: str = "default") -> CloudStorageClient:
-    return _registry[name]()
-
-# Override for testing
-@override_get_client(fake_client, name="test"):
-    # Within this context, get_client() returns fake_client
-```
-
-**Benefits:**
-- **No global state pollution:** Each test can inject its own provider via context
-- **Thread-safe:** ContextVar ensures isolation across concurrent tests
-- **Auto-wiring:** Implementation registers itself on import
-- **Multiple providers:** Can coexist natively via named providers
-
-### 4. Configuration Management
-
-Configuration uses a **precedence hierarchy**:
-
-```
-Constructor kwargs > Environment variables > Defaults (ADC)
-```
-
-For example, `GCPCloudStorageClient`:
-
-```python
-def __init__(self, *, bucket_name: str | None = None, ...):
-    # Step 1: Use constructor arg if provided
-    # Step 2: Fall back to GCS_BUCKET_NAME env var
-    # Step 3: Error if neither provided
-```
-
-**Benefits:**
-- Constructor args override environment for flexibility
-- Environment variables allow CI/CD configuration without code changes
-- Defaults (Application Default Credentials) work without setup
-- Testing can override all layers
-
----
+The shared `cloud_storage_api` intentionally has no dependency injection module. Each team wires implementations in their own project. This keeps the contract minimal and avoids cross-team coupling on DI patterns.
 
 ## Component Architecture
 
-### cloud_storage_client_api
+### External: `cloud_storage_api` (Shared Git Dependency)
 
-Provides the abstract contract and DI infrastructure.
+Defines the contract all implementations follow:
 
-**Files:**
+- `CloudStorageClient` ABC with 6 methods
+- `ObjectInfo` frozen dataclass (9 fields: object_name, version_id, data_type, integrity, encryption, storage_tier, size_bytes, updated_at, metadata)
+- `DeleteResult` TypedDict (`deleted`, `version_id`, `request_charged`)
+- 8 typed domain exceptions inheriting from Python built-ins
 
-1. **client.py**
-   - `CloudStorageClient(ABC)` — Base class with 6 abstract methods
-   - `ObjectInfo` — Immutable dataclass for metadata
+### Component 1: `gcp_client_impl`
 
-2. **di.py**
-   - `register_get_client()` — Register a provider factory
-   - `unregister_get_client()` — Remove a provider
-   - `get_client()` — Retrieve a provider instance
-   - `override_get_client()` — Context manager for test isolation
+Google Cloud Storage implementation of `CloudStorageClient`.
 
-3. **__init__.py**
-   - Public exports: `CloudStorageClient`, `ObjectInfo`, `get_client`, `register_get_client`
+- Every method takes `container` as first argument
+- `_validate_container` and `_validate_object_name` on every call
+- `_map_provider_error` translates GCP SDK exceptions to shared domain exceptions
+- `_blob_to_object_info` maps GCS blob to shared `ObjectInfo` (all 9 fields)
+- `list_files` sorts results by `object_name`
+- `get_file_info` raises `ObjectNotFoundError` (not returns `None`)
 
-**Design Rationale:**
+Authentication resolution order:
 
-- **Why ABC?** Enforces contract; any subclass must implement all methods
-- **Why ObjectInfo?** Immutable dataclass ensures metadata isn't accidentally modified
-- **Why ContextVar?** Allows test isolation without global state or thread-local storage
+1. `oauth_token` / `GCP_OAUTH_TOKEN`
+2. `credentials_path` / `GOOGLE_APPLICATION_CREDENTIALS`
+3. `GCP_SERVICE_KEY` (raw JSON or base64)
+4. Application Default Credentials
 
-### gcp_client_impl
+### Component 2: `cloud_storage_adapter`
 
-Provides Google Cloud Storage implementation.
+HTTP adapter implementing `CloudStorageClient` via the generated OpenAPI client.
 
-**Files:**
+- All 6 methods proxy to the FastAPI service
+- `upload_obj` reads `BinaryIO`, sends raw bytes
+- `download_file` writes response content to local file
+- Maps HTTP status codes to shared exceptions (401/403 -> `AuthenticationError`, 404 -> `ObjectNotFoundError` or `ContainerNotFoundError`)
+- `list_files` sorts results by `object_name`
+- No raw `httpx` calls; all requests go through the generated client
 
-1. **client.py**
-   - `GCPClientConfig` — Configuration container (frozen dataclass)
-   - `GCPCloudStorageClient` — Concrete implementation of `CloudStorageClient`
-   - `_build_credentials()` — Three-tier auth: service account file → env var JSON → ADC
-   - `_build_storage_client()` — Lazy initialization with proper error handling
+### Component 3: `cloud_storage_service`
 
-2. **__init__.py**
-   - Auto-registers `GCPCloudStorageClient` with DI on import
-   - Provides both "gcp" and "default" provider names
+FastAPI microservice wrapping the GCP implementation.
 
-**Design Rationale:**
+- All endpoints use shared method names via the `CloudStorageClient` interface
+- Optional `container` query parameter (defaults to `GCS_BUCKET_NAME`)
+- `object_info_to_response` maps shared `ObjectInfo` fields to HTTP response fields
+- Comprehensive exception handling: all 8 shared exceptions to appropriate HTTP status codes
+- OAuth 2.0 with opaque session tokens (provider token stays server-side)
 
-- **Why lazy initialization?** Defers credential loading until first use; errors caught at runtime with clear messages
-- **Why three auth modes?** Supports dev (file), CI/CD (env var), and production (ADC/Workload Identity)
-- **Why base64 support?** CI/CD systems (CircleCI) can't store files safely; env vars are more flexible
-- **Why class-level config check?** Validates configuration before any network calls
+### Component 4: `cloud_storage_service_api_client`
 
+Auto-generated from `openapi.json` via `openapi-python-client`. Used internally by the adapter. Not hand-edited.
 
-**Test Markers:**
+## Error Handling
 
-- `@pytest.mark.unit` — Fast, isolated, mocked provider calls
-- `@pytest.mark.integration` — Component interactions without external dependencies
-- `@pytest.mark.e2e` — Real GCS against test bucket (slow, requires credentials)
-- `@pytest.mark.circleci` — Runnable in CI without local credential files
-- `@pytest.mark.local_credentials` — Requires local GOOGLE_APPLICATION_CREDENTIALS file
+### Exception Translation at Two Boundaries
 
----
+Adapter boundary (HTTP -> domain):
 
-## Authentication Strategy
+| HTTP Status | Shared Exception |
+|---|---|
+| 401, 403 | `AuthenticationError` |
+| 404 (container) | `ContainerNotFoundError` |
+| 404 (object) | `ObjectNotFoundError` |
+| 422 (key/object_name) | `InvalidObjectNameError` |
+| 422 (container) | `InvalidContainerError` |
+| Other | `StorageBackendError` |
 
-### Three Authentication Modes
+Service boundary (domain -> HTTP):
 
-#### Mode 1: Service Account File Path
-**Use Case:** Local development, CI/CD with file-based secrets
+| Shared Exception | HTTP Status |
+|---|---|
+| `AuthenticationError` | 401 |
+| `ContainerNotFoundError` | 404 |
+| `ObjectNotFoundError` | 404 |
+| `InvalidContainerError` | 422 |
+| `InvalidObjectNameError` | 422 |
+| `InvalidFileObjectError` | 422 |
+| `LocalFileAccessError` | 500 |
+| `StorageBackendError` | 500 |
 
-```python
-import os
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/path/to/key.json"
+## Testing Strategy
 
-client = GCPCloudStorageClient()
-```
+| Type | Location | What it tests |
+|---|---|---|
+| Unit | `components/*/tests/` | Individual methods, mocked providers, exception paths |
+| Integration | `tests/integration/` | Shared contract compliance, fake client behavior |
+| E2E | `tests/e2e/` | Full workflows against real GCS and deployed service |
 
-**GCP Processing:**
-- Reads `GOOGLE_APPLICATION_CREDENTIALS` env var
-- Loads JSON from file path
-- Creates credentials from JSON
-- Advantage: Works with gcloud CLI and most GCP tools
+Coverage threshold: 85% (enforced in CI).
 
-#### Mode 2: Service Account JSON (Env Var)
-**Use Case:** CircleCI and other CI systems that can't store files
+## Deployment
 
-```python
-import base64
-import os
-
-key_json = {...}  # Service account JSON
-key_b64 = base64.b64encode(json.dumps(key_json).encode()).decode()
-os.environ["GCP_SERVICE_KEY"] = key_b64
-
-client = GCPCloudStorageClient()
-```
-
-**GCP Processing:**
-1. Try to decode as base64
-2. Fall back to treating as raw JSON
-3. Parse JSON
-4. Create credentials from parsed JSON
-
-**Advantage:** Works with string-based secrets in CI systems
-
-#### Mode 3: Application Default Credentials (ADC)
-**Use Case:** Production with Workload Identity, local gcloud CLI
-
-```python
-# No env vars needed; uses:
-# 1. ~/.config/gcloud/application_default_credentials.json (gcloud login)
-# 2. Metadata server (Workload Identity on GKE)
-# 3. Service account attached to compute instance (GCE)
-
-client = GCPCloudStorageClient()
-```
-
-**Advantage:** Zero configuration; automatic in production environments
-
-### Priority Resolution
-
-When multiple credentials are available, priority is:
-
-```python
-if credentials_path (arg or GOOGLE_APPLICATION_CREDENTIALS):
-    Use file-based credentials
-elif GCP_SERVICE_KEY:
-    Parse JSON and use credentials
-else:
-    Use Application Default Credentials
-```
-
----
-
-## Error Handling Philosophy
-
-All errors are **fail-fast and informative**:
-
-### Configuration Errors (Fail Immediately)
-
-```python
-# Missing bucket config
-client = GCPCloudStorageClient()  # Before any network call:
-# RuntimeError: "GCS bucket is not configured. Set `GCS_BUCKET_NAME` or pass `bucket_name`"
-
-# Missing dependencies
-import gcp_client_impl
-# RuntimeError: "google-cloud-storage is not installed. Install dependencies: `uv sync`"
-```
-
-### Credential Errors (Fail on First Use)
-
-```python
-# Invalid GCP_SERVICE_KEY
-client = GCPCloudStorageClient(bucket_name="test")
-client.upload_bytes(data=b"test", key="test.txt")
-# RuntimeError: "GCP_SERVICE_KEY must be valid JSON... or base64-encoded JSON"
-```
-
-### Operational Errors (Propagate GCS Errors)
-
-```python
-# Object not found
-client.download_bytes(key="nonexistent.txt")
-# FileNotFoundError: GCS object not found
-
-# Permission denied
-client.delete(key="protected.txt")
-# PermissionError: Access denied by GCS
-```
-
----
+- Direct: Instantiate `GCPCloudStorageClient` and call GCS SDK directly
+- Remote: Instantiate `CloudStorageAdapter` and call FastAPI service over HTTP
+- Both implement the same `CloudStorageClient` interface, so consumer code is identical
+- The FastAPI service is deployed to Render with auto-deploy on push. CircleCI verifies deployment via the Render API.
 
 ## Extending to Other Providers
 
-### Template: Adding AWS S3 Support
+1. Create `components/new_provider_impl/`
+2. Implement all 6 `CloudStorageClient` methods with `container` parameter
+3. Map provider exceptions to shared domain exceptions
+4. Map provider metadata to shared `ObjectInfo` fields
+5. Add tests
 
-Step 1: Create component structure
-
-```bash
-mkdir -p components/aws_client_impl/src/aws_client_impl/tests
-```
-
-Step 2: Implement `CloudStorageClient`
-
-```python
-# components/aws_client_impl/src/aws_client_impl/client.py
-from cloud_storage_client_api import CloudStorageClient, ObjectInfo
-
-class AWSCloudStorageClient(CloudStorageClient):
-    def __init__(self, *, bucket_name: str | None = None, ...):
-        # Read AWS_BUCKET_NAME, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-        pass
-    
-    def upload_bytes(self, *, data: bytes, key: str, ...) -> ObjectInfo:
-        # Use boto3 to upload to S3
-        pass
-    
-    # Implement remaining 5 methods
-```
-
-Step 3: Register with DI
-
-```python
-# components/aws_client_impl/src/aws_client_impl/__init__.py
-from cloud_storage_client_api import register_get_client
-from aws_client_impl.client import AWSCloudStorageClient
-
-def _make_aws_client() -> CloudStorageClient:
-    return AWSCloudStorageClient()
-
-register_get_client(_make_aws_client, name="aws")
-register_get_client(_make_aws_client)  # Also as default
-```
-
-Step 4: Add comprehensive tests
-
-```python
-# components/aws_client_impl/tests/
-# test_config.py       — AWS config precedence
-# test_credentials.py  — IAM role, access key parsing
-# test_operations.py   — S3 upload, download, list, delete
-```
-
-Step 5: Use in code
-
-```python
-import aws_client_impl
-from cloud_storage_client_api import get_client
-
-client = get_client(name="aws")  # Or get_client() if aws is default
-client.upload_bytes(data=b"test", key="test.txt")
-```
-
-### Checklist for New Providers
-
-- [ ] Component created under `components/`
-- [ ] Implements all 6 `CloudStorageClient` methods
-- [ ] Configuration reads from environment variables with constructor override
-- [ ] Comprehensive unit tests (config, credentials, operations)
-- [ ] DI registration in `__init__.py` (both named and default)
-- [ ] README documenting config vars and auth modes
-- [ ] CI/CD tests use appropriate markers (`@pytest.mark.circleci`, `@pytest.mark.local_credentials`)
-
----
-
-## Testing Philosophy
-
-### Isolation Layers
-
-1. **Interface Tests** (`cloud_storage_client_api/tests/`)
-   - Verify ABC contract
-   - Test DI factory
-   - No provider dependencies
-
-2. **Unit Tests** (`gcp_client_impl/tests/`)
-   - Mock Google Cloud Storage SDK
-   - Test config precedence
-   - Test error handling
-   - Fast execution (< 1 second total)
-
-3. **Integration Tests** (`tests/integration/`)
-   - Verify DI across components
-   - Test provider switching
-   - Test thread safety and context isolation
-   - No external dependencies
-
-4. **E2E Tests** (`tests/e2e/`)
-   - Real GCS against test bucket
-   - Full workflows: upload → head → download → list → delete
-   - Separate markers for env-var and file-based credentials
-   - Slow but validates entire system
-
-### Coverage Requirements
-
-- Minimum 85% code coverage (enforced in CI)
-- Untestable lines marked with `# pragma: no cover`
-- All error paths covered
-
----
-
-## Type System
-
-The project uses **strict mypy** with minimal exceptions:
-
-### Why Strict?
-
-1. **Catches Bugs Early:** Type errors prevent runtime failures
-2. **Documents Intent:** Type hints serve as inline documentation
-3. **Tooling Support:** IDEs can provide better autocomplete and refactoring
-4. **Maintainability:** Future developers understand expected types
-
-### Exception Handling
-
-```python
-# google.auth.* doesn't have complete type stubs
-[[tool.mypy.overrides]]
-module = ["google.auth.*"]
-ignore_missing_imports = true
-
-# Pytest fixtures are challenging to type
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_decorators = false
-```
-
-### Type Annotations Style
-
-```python
-# Use | for unions (Python 3.10+)
-def upload_bytes(
-    self,
-    *,
-    data: bytes,
-    key: str,
-    metadata: Mapping[str, str] | None = None,
-) -> ObjectInfo:
-    pass
-
-# Use TYPE_CHECKING for circular imports
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-```
-
----
-
-## Code Quality Standards
-
-### Linting with Ruff
-
-- **select = ["ALL"]** — Enable all rules
-- **Justified ignores:**
-  - `D203`, `D213` — Docstring conflicts with formatter
-  - `COM812`, `ISC001` — Conflict with black formatter
-  - `S101` in tests — `assert` is required for pytest
-  - `ANN` in tests — Type hints less critical in test code
-  - `SLF001` in tests — Private member access OK when testing internals
-
-### Formatting with Ruff
-
-- 130 character line length
-- Consistent indentation
-- No unused imports
-
-### Docstring Conventions
-
-```python
-"""Single-line summary for simple functions."""
-
-def complex_function(x: int) -> str:
-    """Brief summary.
-
-    Longer description if needed, explaining the logic and edge cases.
-
-    Args:
-        x: Parameter description and type.
-
-    Returns:
-        Return value description.
-
-    Raises:
-        ValueError: When input is invalid.
-    """
-```
-
----
-
-## Dependency Management
-
-### Why `uv`?
-
-- **Fast:** Reimplemented Python package manager in Rust
-- **Workspace Support:** Monorepo management built-in
-- **Lock File:** Deterministic dependencies across machines
-- **No requirements.txt:** Cleaner package declarations
-
-### Workspace Structure
-
-```yaml
-[tool.uv.workspace]
-members = ["components/*"]  # Auto-discovers both components
-
-[tool.uv.sources]
-cloud_storage_client_api = { workspace = true }
-gcp-client-impl = { workspace = true }
-```
-
-### Installation
-
-```bash
-uv sync              # Install all packages + dev tools
-uv sync --group dev  # Only dev tools
-```
+No changes are needed to the shared interface, service, or adapter.
