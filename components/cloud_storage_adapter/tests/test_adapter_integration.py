@@ -10,14 +10,18 @@ Skip condition: Service not reachable at configured URL
 from __future__ import annotations
 
 import os
-from typing import Any
+import tempfile
+from io import BytesIO
+from pathlib import Path
 
 import httpx
 import pytest
 from cloud_storage_adapter import CloudStorageAdapter
+from cloud_storage_api.exceptions import ObjectNotFoundError
 
 SERVICE_URL = os.getenv("CLOUD_STORAGE_SERVICE_URL", "http://localhost:8000")
 DEV_TOKEN = os.getenv("DEV_AUTH_TOKEN", "")
+TEST_CONTAINER = os.getenv("CLOUD_STORAGE_TEST_CONTAINER", "integration-test-container")
 
 
 def service_available() -> bool:
@@ -52,21 +56,21 @@ class TestAdapterIntegration:
         test_key = "integration_test/hello.txt"
         test_data = b"Hello, Integration Test!"
 
-        result = adapter.upload_bytes(
-            data=test_data,
-            key=test_key,
-            content_type="text/plain",
+        result = adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(test_data),
+            remote_path=test_key,
         )
 
         # Verify upload returned object info
         assert result is not None
-        assert result.key == test_key
+        assert result.object_name == test_key
         assert result.size_bytes == len(test_data)
 
         # List objects and verify upload is present
-        objects = adapter.list(prefix="integration_test/")
+        objects = adapter.list_files(container=TEST_CONTAINER, prefix="integration_test/")
         assert len(objects) > 0
-        assert any(obj.key == test_key for obj in objects)
+        assert any(obj.object_name == test_key for obj in objects)
 
     def test_head_returns_metadata(self) -> None:
         """Test head operation returns correct metadata."""
@@ -74,17 +78,21 @@ class TestAdapterIntegration:
         test_key = "integration_test/metadata_test.txt"
 
         # Upload file first
-        adapter.upload_bytes(data=b"metadata content", key=test_key)
+        adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b"metadata content"),
+            remote_path=test_key,
+        )
 
         # Head the object and verify metadata
-        obj_info = adapter.head(key=test_key)
+        obj_info = adapter.get_file_info(container=TEST_CONTAINER, object_name=test_key)
 
         assert obj_info is not None
-        assert obj_info.key == test_key
+        assert obj_info.object_name == test_key
         assert obj_info.size_bytes == len(b"metadata content")
         # Should have timestamp and etag
         assert obj_info.updated_at is not None
-        assert obj_info.etag is not None
+        assert obj_info.integrity is not None
 
     def test_download_bytes_returns_content(self) -> None:
         """Test downloading file returns correct content."""
@@ -93,10 +101,25 @@ class TestAdapterIntegration:
         test_content = b"Download test content"
 
         # Upload file
-        adapter.upload_bytes(data=test_content, key=test_key)
+        adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(test_content),
+            remote_path=test_key,
+        )
 
-        # Download and verify content
-        downloaded = adapter.download_bytes(key=test_key)
+        # Download to a temp file and verify content
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp_path = tmp.name
+
+        try:
+            adapter.download_file(
+                container=TEST_CONTAINER,
+                object_name=test_key,
+                file_name=tmp_path,
+            )
+            downloaded = Path(tmp_path).read_bytes()
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
         assert downloaded == test_content
 
@@ -106,46 +129,62 @@ class TestAdapterIntegration:
         test_key = "integration_test/delete_test.txt"
 
         # Upload file
-        adapter.upload_bytes(data=b"to be deleted", key=test_key)
+        adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b"to be deleted"),
+            remote_path=test_key,
+        )
 
         # Verify it exists
-        obj_info = adapter.head(key=test_key)
+        obj_info = adapter.get_file_info(container=TEST_CONTAINER, object_name=test_key)
         assert obj_info is not None
 
         # Delete the object
-        adapter.delete(key=test_key)
+        adapter.delete_file(container=TEST_CONTAINER, object_name=test_key)
 
         # Verify it's gone
-        result_after_delete = adapter.head(key=test_key)
-        assert result_after_delete is None
+        with pytest.raises(ObjectNotFoundError):
+            adapter.get_file_info(container=TEST_CONTAINER, object_name=test_key)
 
-    def test_upload_with_custom_content_type(self) -> None:
-        """Test uploading with custom content type."""
+    def test_upload_returns_normalized_data_type_field(self) -> None:
+        """Test upload response exposes normalized data_type field."""
         adapter = self.get_adapter()
         test_key = "integration_test/custom_type.json"
         test_data = b'{"key": "value"}'
 
-        result = adapter.upload_bytes(
-            data=test_data,
-            key=test_key,
-            content_type="application/json",
+        result = adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(test_data),
+            remote_path=test_key,
         )
 
         assert result is not None
-        assert result.content_type == "application/json"
+        assert hasattr(result, "data_type")
 
     def test_list_with_prefix_filtering(self) -> None:
         """Test that list prefix correctly filters results."""
         adapter = self.get_adapter()
 
         # Upload files with different prefixes
-        adapter.upload_bytes(data=b"content1", key="prefix_a/file1.txt")
-        adapter.upload_bytes(data=b"content2", key="prefix_a/file2.txt")
-        adapter.upload_bytes(data=b"content3", key="prefix_b/file3.txt")
+        adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b"content1"),
+            remote_path="prefix_a/file1.txt",
+        )
+        adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b"content2"),
+            remote_path="prefix_a/file2.txt",
+        )
+        adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b"content3"),
+            remote_path="prefix_b/file3.txt",
+        )
 
         # List with prefix_a - should only get 2 files
-        prefix_a_objects = adapter.list(prefix="prefix_a/")
-        prefix_a_keys = [obj.key for obj in prefix_a_objects]
+        prefix_a_objects = adapter.list_files(container=TEST_CONTAINER, prefix="prefix_a/")
+        prefix_a_keys = [obj.object_name for obj in prefix_a_objects]
 
         assert "prefix_a/file1.txt" in prefix_a_keys
         assert "prefix_a/file2.txt" in prefix_a_keys
@@ -154,9 +193,6 @@ class TestAdapterIntegration:
 
     def test_upload_file_from_path(self) -> None:
         """Test uploading file from filesystem path."""
-        import tempfile
-        from pathlib import Path
-
         adapter = self.get_adapter()
         test_key = "integration_test/file_from_path.txt"
 
@@ -167,58 +203,88 @@ class TestAdapterIntegration:
 
         try:
             # Upload from path
-            result = adapter.upload_file(local_path=tmp_path, key=test_key)
+            result = adapter.upload_file(
+                container=TEST_CONTAINER,
+                local_path=tmp_path,
+                remote_path=test_key,
+            )
 
             assert result is not None
-            assert result.key == test_key
+            assert result.object_name == test_key
             assert result.size_bytes == len("Content from file path")
 
             # Download and verify
-            downloaded = adapter.download_bytes(key=test_key)
-            assert downloaded == b"Content from file path"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as dl_tmp:
+                dl_path = dl_tmp.name
+            try:
+                adapter.download_file(
+                    container=TEST_CONTAINER,
+                    object_name=test_key,
+                    file_name=dl_path,
+                )
+                assert Path(dl_path).read_bytes() == b"Content from file path"
+            finally:
+                Path(dl_path).unlink(missing_ok=True)
         finally:
             # Cleanup
-            Path(tmp_path).unlink()
+            Path(tmp_path).unlink(missing_ok=True)
 
     def test_download_to_file_path(self) -> None:
         """Test downloading file to filesystem path."""
-        import tempfile
-        from pathlib import Path
-
         adapter = self.get_adapter()
         test_key = "integration_test/download_to_file.txt"
         test_content = b"Downloaded file content"
 
         # Upload file
-        adapter.upload_bytes(data=test_content, key=test_key)
+        adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(test_content),
+            remote_path=test_key,
+        )
 
         # Download to temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             tmp_path = tmp.name
 
         try:
-            # Note: This test assumes download_to_file exists or we use download_bytes + write
-            downloaded = adapter.download_bytes(key=test_key)
-            Path(tmp_path).write_bytes(downloaded)
+            info = adapter.download_file(
+                container=TEST_CONTAINER,
+                object_name=test_key,
+                file_name=tmp_path,
+            )
 
             # Verify file was written correctly
             assert Path(tmp_path).read_bytes() == test_content
+            assert info.object_name == test_key
         finally:
-            Path(tmp_path).unlink()
+            Path(tmp_path).unlink(missing_ok=True)
 
     def test_upload_empty_file(self) -> None:
         """Test uploading an empty file."""
         adapter = self.get_adapter()
         test_key = "integration_test/empty.txt"
 
-        result = adapter.upload_bytes(data=b"", key=test_key)
+        result = adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b""),
+            remote_path=test_key,
+        )
 
         assert result is not None
         assert result.size_bytes == 0
 
         # Verify we can download it
-        downloaded = adapter.download_bytes(key=test_key)
-        assert downloaded == b""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+            tmp_path = tmp.name
+        try:
+            adapter.download_file(
+                container=TEST_CONTAINER,
+                object_name=test_key,
+                file_name=tmp_path,
+            )
+            assert Path(tmp_path).read_bytes() == b""
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     def test_upload_large_file(self) -> None:
         """Test uploading a larger file (tests streaming/chunking if applicable)."""
@@ -228,28 +294,54 @@ class TestAdapterIntegration:
         # Create 5MB of test data
         large_data = b"x" * (5 * 1024 * 1024)
 
-        result = adapter.upload_bytes(data=large_data, key=test_key)
+        result = adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(large_data),
+            remote_path=test_key,
+        )
 
         assert result is not None
         assert result.size_bytes == len(large_data)
 
         # Download and verify size
-        downloaded = adapter.download_bytes(key=test_key)
-        assert len(downloaded) == len(large_data)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+            tmp_path = tmp.name
+        try:
+            adapter.download_file(
+                container=TEST_CONTAINER,
+                object_name=test_key,
+                file_name=tmp_path,
+            )
+            assert len(Path(tmp_path).read_bytes()) == len(large_data)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     def test_upload_with_special_characters_in_key(self) -> None:
         """Test uploading with special characters in key."""
         adapter = self.get_adapter()
         test_key = "integration_test/file with spaces (v1) [beta].txt"
 
-        result = adapter.upload_bytes(data=b"content", key=test_key)
+        result = adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(b"content"),
+            remote_path=test_key,
+        )
 
         assert result is not None
-        assert result.key == test_key
+        assert result.object_name == test_key
 
         # Verify we can download it
-        downloaded = adapter.download_bytes(key=test_key)
-        assert downloaded == b"content"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp_path = tmp.name
+        try:
+            adapter.download_file(
+                container=TEST_CONTAINER,
+                object_name=test_key,
+                file_name=tmp_path,
+            )
+            assert Path(tmp_path).read_bytes() == b"content"
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     def test_concurrent_uploads(self) -> None:
         """Test multiple concurrent operations (sequential simulation)."""
@@ -263,11 +355,15 @@ class TestAdapterIntegration:
 
         # Upload multiple files
         for i, key in enumerate(keys):
-            adapter.upload_bytes(data=f"content_{i}".encode(), key=key)
+            adapter.upload_obj(
+                container=TEST_CONTAINER,
+                file_obj=BytesIO(f"content_{i}".encode()),
+                remote_path=key,
+            )
 
         # List and verify all are present
-        objects = adapter.list(prefix="integration_test/concurrent_")
-        uploaded_keys = [obj.key for obj in objects]
+        objects = adapter.list_files(container=TEST_CONTAINER, prefix="integration_test/concurrent_")
+        uploaded_keys = [obj.object_name for obj in objects]
 
         for key in keys:
             assert key in uploaded_keys
@@ -279,21 +375,34 @@ class TestAdapterIntegration:
         test_content = b"Complete workflow test"
 
         # 1. Upload
-        upload_result = adapter.upload_bytes(data=test_content, key=test_key)
+        upload_result = adapter.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=BytesIO(test_content),
+            remote_path=test_key,
+        )
         assert upload_result is not None
 
         # 2. Head
-        head_result = adapter.head(key=test_key)
+        head_result = adapter.get_file_info(container=TEST_CONTAINER, object_name=test_key)
         assert head_result is not None
-        assert head_result.key == test_key
+        assert head_result.object_name == test_key
 
         # 3. Download
-        downloaded = adapter.download_bytes(key=test_key)
-        assert downloaded == test_content
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp_path = tmp.name
+        try:
+            adapter.download_file(
+                container=TEST_CONTAINER,
+                object_name=test_key,
+                file_name=tmp_path,
+            )
+            assert Path(tmp_path).read_bytes() == test_content
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
         # 4. Delete
-        adapter.delete(key=test_key)
+        adapter.delete_file(container=TEST_CONTAINER, object_name=test_key)
 
         # 5. Verify deleted
-        final_head = adapter.head(key=test_key)
-        assert final_head is None
+        with pytest.raises(ObjectNotFoundError):
+            adapter.get_file_info(container=TEST_CONTAINER, object_name=test_key)

@@ -7,18 +7,25 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...types import Response
+from ...types import Response, UNSET, Unset
 
 
 def _get_kwargs(
     key: str,
+    *,
+    container: str | Unset = UNSET,
 ) -> dict[str, Any]:
+
+    params: dict[str, Any] = {}
+    params["container"] = container
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
         "method": "delete",
         "url": "/delete/{key}".format(
             key=quote(str(key), safe=""),
         ),
+        "params": params,
     }
 
     return _kwargs
@@ -57,6 +64,7 @@ def sync_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError]:
     """Delete Object
 
@@ -85,6 +93,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         key=key,
+        container=container,
     )
 
     response = client.get_httpx_client().request(
@@ -98,6 +107,7 @@ def sync(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> Any | HTTPValidationError | None:
     """Delete Object
 
@@ -127,6 +137,7 @@ def sync(
     return sync_detailed(
         key=key,
         client=client,
+        container=container,
     ).parsed
 
 
@@ -134,6 +145,7 @@ async def asyncio_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError]:
     """Delete Object
 
@@ -162,6 +174,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         key=key,
+        container=container,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -173,6 +186,7 @@ async def asyncio(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: str | Unset = UNSET,
 ) -> Any | HTTPValidationError | None:
     """Delete Object
 
@@ -203,5 +217,6 @@ async def asyncio(
         await asyncio_detailed(
             key=key,
             client=client,
+            container=container,
         )
     ).parsed

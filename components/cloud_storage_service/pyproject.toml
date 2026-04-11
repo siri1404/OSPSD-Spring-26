@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "cloud-storage-service"
 version = "1.0.0"
 description = "FastAPI service for cloud storage operations with OAuth 2.0 authentication"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
@@ -16,6 +16,7 @@ dependencies = [
     "google-cloud-storage>=2.14.0",
     "google-auth>=2.27.0",
     "gcp-client-impl",
+    "cloud-storage-api",
 ]
 
 [project.optional-dependencies]
@@ -27,3 +28,8 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cloud_storage_service"]
+
+[tool.uv.sources]
+cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
+gcp-client-impl = { workspace = true }
+

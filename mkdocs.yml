@@ -17,7 +17,6 @@ nav:
   - Project Structure: structure.md
   - CircleCI Setup: circleci-setup.md
   - Components:
-      - Cloud Storage Client API: components/cloud_storage_client_api.md
       - GCP Client Implementation: components/gcp_client_impl.md
       - Cloud Storage Adapter: components/cloud_storage_adapter.md
       - Cloud Storage Service: components/cloud_storage_service.md

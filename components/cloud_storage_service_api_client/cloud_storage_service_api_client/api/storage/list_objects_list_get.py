@@ -13,11 +13,13 @@ from ...types import UNSET, Response, Unset
 def _get_kwargs(
     *,
     prefix: str | Unset = "",
+    container: str | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
 
     params["prefix"] = prefix
+    params["container"] = container
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -64,6 +66,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ListResponse]:
     """List Objects
 
@@ -95,6 +98,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         prefix=prefix,
+        container=container,
     )
 
     response = client.get_httpx_client().request(
@@ -108,6 +112,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: str | Unset = UNSET,
 ) -> HTTPValidationError | ListResponse | None:
     """List Objects
 
@@ -140,6 +145,7 @@ def sync(
     return sync_detailed(
         client=client,
         prefix=prefix,
+        container=container,
     ).parsed
 
 
@@ -147,6 +153,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ListResponse]:
     """List Objects
 
@@ -178,6 +185,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         prefix=prefix,
+        container=container,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -189,6 +197,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: str | Unset = UNSET,
 ) -> HTTPValidationError | ListResponse | None:
     """List Objects
 
@@ -222,5 +231,6 @@ async def asyncio(
         await asyncio_detailed(
             client=client,
             prefix=prefix,
+            container=container,
         )
     ).parsed

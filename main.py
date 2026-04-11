@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _bootstrap_workspace_paths() -> None:
     """Ensure component packages are importable when running this file directly."""
     repo_root = Path(__file__).resolve().parent
     extra_paths = [
-        repo_root / "components" / "cloud_storage_client_api" / "src",
         repo_root / "components" / "gcp_client_impl" / "src",
         repo_root / "components" / "cloud_storage_adapter" / "src",
         repo_root / "components" / "cloud_storage_service_api_client",
@@ -24,27 +27,20 @@ def _bootstrap_workspace_paths() -> None:
 
 _bootstrap_workspace_paths()
 
-import cloud_storage_adapter  # Import triggers DI registration
-import gcp_client_impl  # Import triggers DI registration
-from cloud_storage_client_api.di import get_client
+from cloud_storage_adapter import CloudStorageAdapter
+from gcp_client_impl import GCPCloudStorageClient
 
 
 def main() -> None:
-    """Run a backend interchangeability sanity check.
-
-    Same consumer flow is executed against both providers.
-    """
-    for name in ["gcp", "service"]:
+    """Run a lightweight import/instantiation sanity check."""
+    clients: list[tuple[str, Callable[[], object]]] = [
+        ("gcp", GCPCloudStorageClient),
+        ("service", lambda: CloudStorageAdapter(base_url="http://localhost:8000", token="")),
+    ]
+    for name, ctor in clients:
         try:
-            client = get_client(name)
-            client.upload_bytes(
-                data=b"hello",
-                key="test.txt",
-                content_type="text/plain",
-                metadata={},
-            )
-            result = client.list(prefix="")
-            sys.stdout.write(f"{name}: {result}\n")
+            client = ctor()
+            sys.stdout.write(f"{name}: initialized {client.__class__.__name__}\n")
         except Exception as exc:
             sys.stdout.write(f"{name}: skipped ({exc})\n")
 

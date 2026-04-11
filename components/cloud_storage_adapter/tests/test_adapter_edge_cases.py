@@ -5,9 +5,10 @@ Tests boundary conditions, error handling, and metadata edge cases.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 from http import HTTPStatus
-from unittest.mock import MagicMock, patch
+from io import BytesIO
+from unittest.mock import MagicMock
 
 import pytest
 from cloud_storage_adapter import CloudStorageAdapter
@@ -33,11 +34,11 @@ class TestAdapterMetadataEdgeCases:
 
         result = CloudStorageAdapter._to_object_info(response)
 
-        assert result.key == "file.txt"
+        assert result.object_name == "file.txt"
         assert result.size_bytes is None
-        assert result.etag is None
+        assert result.integrity is None
         assert result.updated_at is None
-        assert result.content_type is None
+        assert result.data_type is None
         assert result.metadata is None
 
     def test_to_object_info_with_none_metadata(self) -> None:
@@ -118,7 +119,7 @@ class TestAdapterStatusCodeEdgeCases:
             ),
         )
 
-        result = adapter.list(prefix="nonexistent/")
+        result = adapter.list_files(container="container", prefix="nonexistent/")
 
         assert result == []
 
@@ -135,10 +136,10 @@ class TestAdapterStatusCodeEdgeCases:
         )
 
         # First delete should succeed
-        adapter.delete(key="file.txt")
+        adapter.delete_file(container="container", object_name="file.txt")
 
         # Second delete should also succeed (idempotent)
-        adapter.delete(key="file.txt")
+        adapter.delete_file(container="container", object_name="file.txt")
 
     def test_upload_bytes_with_empty_bytes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test uploading empty bytes."""
@@ -156,7 +157,11 @@ class TestAdapterStatusCodeEdgeCases:
             ),
         )
 
-        result = adapter.upload_bytes(data=b"", key="empty.txt")
+        result = adapter.upload_obj(
+            container="container",
+            file_obj=BytesIO(b""),
+            remote_path="empty.txt",
+        )
 
-        assert result.key == "empty.txt"
+        assert result.object_name == "empty.txt"
         assert result.size_bytes == 0

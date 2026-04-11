@@ -4,15 +4,28 @@ from __future__ import annotations
 
 import os
 import secrets
+import tempfile
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
-from cloud_storage_client_api import CloudStorageClient
-from cloud_storage_client_api.exceptions import ObjectNotFoundError
+import anyio
+from cloud_storage_api import CloudStorageClient
+from cloud_storage_api.exceptions import (
+    AuthenticationError,
+    ContainerNotFoundError,
+    InvalidContainerError,
+    InvalidFileObjectError,
+    InvalidObjectNameError,
+    LocalFileAccessError,
+    ObjectNotFoundError,
+    StorageBackendError,
+)
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import Response
+from fastapi.security import HTTPAuthorizationCredentials
 from gcp_client_impl import GCPCloudStorageClient
 
 # Load .env file from project root
@@ -25,6 +38,7 @@ from cloud_storage_service.auth import (
     build_oauth_url,
     exchange_code_for_token,
     get_auth_config,
+    security,
     verify_token,
 )
 from cloud_storage_service.models import (
@@ -42,6 +56,20 @@ app = FastAPI(
     description="RESTful API for cloud storage operations with OAuth 2.0 authentication",
     version="1.0.0",
 )
+
+# Container used by storage operations.
+GCS_BUCKET = os.getenv("GCS_BUCKET_NAME", "")
+
+
+def _resolve_container(container: str | None) -> str:
+    """Return the request container or the configured default bucket."""
+    return container or GCS_BUCKET
+
+
+class _UploadStream(BytesIO):
+    """BytesIO carrying optional MIME type metadata for provider uploads."""
+
+    content_type: str | None = None
 
 
 def get_storage_client(token: Annotated[str, Depends(verify_token)]) -> CloudStorageClient:
@@ -75,11 +103,11 @@ def object_info_to_response(obj: Any) -> ObjectInfoResponse:
         ObjectInfoResponse for API response.
     """
     return ObjectInfoResponse(
-        key=obj.key,
+        key=obj.object_name,
         size_bytes=obj.size_bytes,
-        etag=obj.etag,
+        etag=obj.integrity,
         updated_at=obj.updated_at,
-        content_type=obj.content_type,
+        content_type=obj.data_type,
         metadata=dict(obj.metadata) if obj.metadata else None,
     )
 
@@ -114,14 +142,14 @@ def root() -> dict[str, str]:
 # ============================================================================
 
 
-@app.get("/auth/login", tags=["Authentication"])
-async def oauth_login(config: Annotated[AuthConfig, Depends(get_auth_config)]) -> RedirectResponse:
+@app.post("/auth/login", response_model=OAuthLoginResponse, tags=["Authentication"])
+async def oauth_login(config: Annotated[AuthConfig, Depends(get_auth_config)]) -> OAuthLoginResponse:
     """Initiate OAuth 2.0 login flow with Google.
 
-    Generates an authorization URL and redirects the user to Google's OAuth consent screen.
+    Generates an authorization URL for Google's OAuth consent screen.
 
     Returns:
-        Redirect response to Google's OAuth consent screen.
+        Response containing the authorization URL.
     """
     # Generate a random state for CSRF protection
     state = secrets.token_urlsafe(32)
@@ -129,7 +157,7 @@ async def oauth_login(config: Annotated[AuthConfig, Depends(get_auth_config)]) -
 
     auth_url = build_oauth_url(config, state=state)
 
-    return RedirectResponse(url=auth_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    return OAuthLoginResponse(auth_url=auth_url)
 
 
 @app.get("/auth/callback", response_model=OAuthCallbackResponse, tags=["Authentication"])
@@ -187,20 +215,24 @@ async def oauth_callback(
 
 
 @app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
-async def logout(token: str = Depends(verify_token)) -> None:
+async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)) -> None:
     """Logout by invalidating the session token.
 
     Removes the service-owned session token, effectively revoking access.
 
     Args:
-        token: Validated access token (session token or provider token).
+        credentials: HTTP bearer credentials containing the raw token.
 
     Returns:
         204 No Content on success.
     """
-    # Remove the session token if it exists (if it's a session token)
-    if token in active_sessions:
-        del active_sessions[token]
+    # Verify token first (raises 401 if invalid).
+    await verify_token(credentials)
+
+    # Remove by raw bearer token so opaque session IDs are actually invalidated.
+    raw_token = credentials.credentials
+    if raw_token in active_sessions:
+        del active_sessions[raw_token]
     # If it's not a session token (e.g., dev token), logout is a no-op
 
 
@@ -210,12 +242,13 @@ async def logout(token: str = Depends(verify_token)) -> None:
 
 
 @app.post("/upload", response_model=ObjectInfoResponse, tags=["Storage"])
-async def upload_file(
+async def upload_file(  # noqa: PLR0913
     file: Annotated[UploadFile, File(description="File to upload")],
     key: Annotated[str, Form(description="Object key/path in storage")],
     content_type: Annotated[str | None, Form(description="MIME type of the content")] = None,
     token: str = Depends(verify_token),
     client: CloudStorageClient = Depends(get_storage_client),
+    container: Annotated[str | None, Query(description="Storage container or bucket name")] = None,
 ) -> ObjectInfoResponse:
     """Upload a file to cloud storage.
 
@@ -227,6 +260,7 @@ async def upload_file(
         content_type: Optional MIME type.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         Object metadata after successful upload.
@@ -237,18 +271,39 @@ async def upload_file(
     try:
         # Read file contents
         file_contents = await file.read()
-
-        # Use content_type from form if provided, otherwise use file's content_type
-        final_content_type = content_type or file.content_type
+        effective_container = _resolve_container(container)
 
         # Upload to GCS
-        object_info = client.upload_bytes(
-            data=file_contents,
-            key=key,
-            content_type=final_content_type,
+        upload_stream = _UploadStream(file_contents)
+        upload_stream.content_type = content_type or file.content_type
+        object_info = client.upload_obj(
+            container=effective_container,
+            file_obj=upload_stream,
+            remote_path=key,
         )
 
         return object_info_to_response(object_info)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed") from exc
+    except ContainerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found") from exc
+    except InvalidContainerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["query", "container"], "msg": "Invalid container", "type": "value_error"}],
+        ) from exc
+    except InvalidObjectNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["body", "key"], "msg": "Invalid object name", "type": "value_error"}],
+        ) from exc
+    except InvalidFileObjectError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["body", "file"], "msg": "Invalid file object", "type": "value_error"}],
+        ) from exc
+    except StorageBackendError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Storage backend error: {exc}") from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -261,6 +316,7 @@ async def download_file(
     key: str,
     token: Annotated[str, Depends(verify_token)],
     client: Annotated[CloudStorageClient, Depends(get_storage_client)],
+    container: Annotated[str | None, Query(description="Storage container or bucket name")] = None,
 ) -> Response:
     """Download a file from cloud storage.
 
@@ -270,6 +326,7 @@ async def download_file(
         key: Object key/path to download.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         File contents as streaming response.
@@ -278,12 +335,18 @@ async def download_file(
         HTTPException: If file not found or download fails.
     """
     try:
-        # Download file bytes
-        file_bytes = client.download_bytes(key=key)
+        effective_container = _resolve_container(container)
+        obj_info = client.get_file_info(container=effective_container, object_name=key)
+        content_type = obj_info.data_type or "application/octet-stream"
 
-        # Get object info for content type
-        obj_info = client.head(key=key)
-        content_type = obj_info.content_type if obj_info else "application/octet-stream"
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            client.download_file(container=effective_container, object_name=key, file_name=tmp_path)
+            file_bytes = await anyio.Path(tmp_path).read_bytes()
+        finally:
+            await anyio.Path(tmp_path).unlink(missing_ok=True)
 
         return Response(
             content=file_bytes,
@@ -292,6 +355,24 @@ async def download_file(
                 "Content-Disposition": f'attachment; filename="{key.rsplit("/", maxsplit=1)[-1]}"',
             },
         )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed") from exc
+    except ContainerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found") from exc
+    except InvalidContainerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["query", "container"], "msg": "Invalid container", "type": "value_error"}],
+        ) from exc
+    except InvalidObjectNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["path", "key"], "msg": "Invalid object name", "type": "value_error"}],
+        ) from exc
+    except LocalFileAccessError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Local file access error: {exc}") from exc
+    except StorageBackendError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Storage backend error: {exc}") from exc
     except ObjectNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -309,6 +390,7 @@ async def list_objects(
     prefix: Annotated[str, Query(description="Prefix filter for object keys")] = "",
     token: str = Depends(verify_token),
     client: CloudStorageClient = Depends(get_storage_client),
+    container: Annotated[str | None, Query(description="Storage container or bucket name")] = None,
 ) -> ListResponse:
     """List objects in cloud storage with optional prefix filter.
 
@@ -318,6 +400,7 @@ async def list_objects(
         prefix: Filter objects by key prefix.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         List of objects matching the prefix.
@@ -326,10 +409,22 @@ async def list_objects(
         HTTPException: If listing fails.
     """
     try:
-        objects = client.list(prefix=prefix)
+        effective_container = _resolve_container(container)
+        objects = client.list_files(container=effective_container, prefix=prefix)
         return ListResponse(
             objects=[object_info_to_response(obj) for obj in objects],
         )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed") from exc
+    except ContainerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found") from exc
+    except InvalidContainerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["query", "container"], "msg": "Invalid container", "type": "value_error"}],
+        ) from exc
+    except StorageBackendError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Storage backend error: {exc}") from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -342,6 +437,7 @@ async def delete_object(
     key: str,
     token: Annotated[str, Depends(verify_token)],
     client: Annotated[CloudStorageClient, Depends(get_storage_client)],
+    container: Annotated[str | None, Query(description="Storage container or bucket name")] = None,
 ) -> None:
     """Delete an object from cloud storage.
 
@@ -351,17 +447,35 @@ async def delete_object(
         key: Object key/path to delete.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Raises:
         HTTPException: If file not found or deletion fails.
     """
     try:
-        client.delete(key=key)
+        effective_container = _resolve_container(container)
+        client.delete_file(container=effective_container, object_name=key)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed") from exc
+    except ContainerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found") from exc
+    except InvalidContainerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["query", "container"], "msg": "Invalid container", "type": "value_error"}],
+        ) from exc
+    except InvalidObjectNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["path", "key"], "msg": "Invalid object name", "type": "value_error"}],
+        ) from exc
     except ObjectNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File not found: {key}",
         ) from exc
+    except StorageBackendError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Storage backend error: {exc}") from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -374,6 +488,7 @@ async def head_object(
     key: str,
     token: Annotated[str, Depends(verify_token)],
     client: Annotated[CloudStorageClient, Depends(get_storage_client)],
+    container: Annotated[str | None, Query(description="Storage container or bucket name")] = None,
 ) -> ObjectInfoResponse:
     """Get metadata for an object without downloading its contents.
 
@@ -383,6 +498,7 @@ async def head_object(
         key: Object key/path to query.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         Object metadata.
@@ -391,15 +507,30 @@ async def head_object(
         HTTPException: If object not found or query fails.
     """
     try:
-        obj_info = client.head(key=key)
-        if obj_info is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Object not found: {key}",
-            )
+        effective_container = _resolve_container(container)
+        obj_info = client.get_file_info(container=effective_container, object_name=key)
         return object_info_to_response(obj_info)
-    except HTTPException:
-        raise
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed") from exc
+    except ContainerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found") from exc
+    except InvalidContainerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["query", "container"], "msg": "Invalid container", "type": "value_error"}],
+        ) from exc
+    except InvalidObjectNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{"loc": ["path", "key"], "msg": "Invalid object name", "type": "value_error"}],
+        ) from exc
+    except ObjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Object not found: {key}",
+        ) from exc
+    except StorageBackendError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Storage backend error: {exc}") from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

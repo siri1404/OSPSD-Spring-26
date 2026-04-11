@@ -1,9 +1,10 @@
 [project]
 name = "cloud-storage-adapter"
 version = "0.1.0"
-requires-python = ">=3.11"
+description = "HTTP adapter for cloud storage operations"
+requires-python = ">=3.12"
 dependencies = [
-    "cloud-storage-client-api",
+    "cloud-storage-api",
     "cloud-storage-service-api-client",
     "httpx>=0.26.0",
 ]
@@ -16,5 +17,5 @@ build-backend = "hatchling.build"
 packages = ["src/cloud_storage_adapter"]
 
 [tool.uv.sources]
-cloud-storage-client-api = { workspace = true }
+cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
 cloud-storage-service-api-client = { workspace = true }

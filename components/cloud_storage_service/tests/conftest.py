@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncGenerator, Generator
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -77,20 +78,26 @@ def mock_storage_client() -> Generator[MagicMock, None, None]:
 
     mock_client = MagicMock()
 
-    # Mock upload_bytes
+    # Mock shared CloudStorageClient methods
     mock_object_info = MagicMock()
-    mock_object_info.key = "test-key"
+    mock_object_info.object_name = "test-key"
     mock_object_info.size_bytes = 100
-    mock_object_info.etag = "test-etag"
+    mock_object_info.integrity = "test-etag"
     mock_object_info.updated_at = datetime.now()
-    mock_object_info.content_type = "text/plain"
+    mock_object_info.data_type = "text/plain"
     mock_object_info.metadata = {}
 
-    mock_client.upload_bytes.return_value = mock_object_info
-    mock_client.download_bytes.return_value = b"test content"
-    mock_client.head.return_value = mock_object_info
-    mock_client.list.return_value = [mock_object_info]
-    mock_client.delete.return_value = None
+    def _mock_download_file(container: str, object_name: str, file_name: str) -> MagicMock:
+        """Simulate provider download by writing bytes to requested local path."""
+        _ = (container, object_name)
+        Path(file_name).write_bytes(b"test content")
+        return mock_object_info
+
+    mock_client.upload_obj.return_value = mock_object_info
+    mock_client.download_file.side_effect = _mock_download_file
+    mock_client.get_file_info.return_value = mock_object_info
+    mock_client.list_files.return_value = [mock_object_info]
+    mock_client.delete_file.return_value = {"deleted": True, "version_id": None, "request_charged": None}
 
     # Override FastAPI dependency
     def mock_get_storage_client() -> MagicMock:
