@@ -193,14 +193,15 @@ async def test_callback_endpoint_with_invalid_state() -> None:
 
 
 @pytest.mark.unit
-def test_dev_token_authentication(client: TestClient) -> None:
+def test_dev_token_authentication(client: TestClient, mock_storage_client: MagicMock) -> None:
     """Test that dev token works for authentication."""
     # Try accessing a protected endpoint with dev token
     headers = {"Authorization": "Bearer dev-token-12345"}
     response = client.get("/list", headers=headers)
 
-    # Should not return 401 Unauthorized
-    assert response.status_code != 401
+    # Dev token should authorize the request and reach the storage layer.
+    assert response.status_code == 200
+    mock_storage_client.list_files.assert_called_once_with(container="test-bucket", prefix="")
 
 
 @pytest.mark.unit

@@ -71,6 +71,21 @@ class TestUploadObj:
         assert result.object_name == "dir/hello.txt"
         assert result.size_bytes == 5
 
+    def test_forwards_content_type_from_file_object(self, gcp_client: GCPCloudStorageClient) -> None:
+        blob = _make_blob(name="dir/hello.txt", size=5)
+        gcp_client._storage_client = _make_storage_client(blob)
+
+        stream = BytesIO(b"hello")
+        stream.content_type = "text/plain"  # type: ignore[attr-defined]
+
+        gcp_client.upload_obj(
+            container=TEST_CONTAINER,
+            file_obj=stream,
+            remote_path="dir/hello.txt",
+        )
+
+        blob.upload_from_file.assert_called_once_with(stream, content_type="text/plain")
+
     def test_raises_invalid_file_object_on_upload_type_error(self, gcp_client: GCPCloudStorageClient) -> None:
         blob = _make_blob(name="dir/hello.txt", size=5)
         blob.upload_from_file.side_effect = TypeError("bad file object")

@@ -283,7 +283,9 @@ class GCPCloudStorageClient(CloudStorageClient):
         try:
             bucket = self._get_bucket(container)
             blob = bucket.blob(remote_path)
-            blob.upload_from_file(file_obj)
+            raw_content_type = getattr(file_obj, "content_type", None)
+            detected_content_type = raw_content_type if isinstance(raw_content_type, str) else None
+            blob.upload_from_file(file_obj, content_type=detected_content_type)
             blob.reload()
             return self._blob_to_object_info(blob)
         except (OSError, TypeError) as exc:

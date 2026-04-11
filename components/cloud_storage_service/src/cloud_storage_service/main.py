@@ -66,6 +66,12 @@ def _resolve_container(container: str | None) -> str:
     return container or GCS_BUCKET
 
 
+class _UploadStream(BytesIO):
+    """BytesIO carrying optional MIME type metadata for provider uploads."""
+
+    content_type: str | None = None
+
+
 def get_storage_client(token: Annotated[str, Depends(verify_token)]) -> CloudStorageClient:
     """Get GCP Cloud Storage client instance using verified provider token.
 
@@ -268,10 +274,11 @@ async def upload_file(  # noqa: PLR0913
         effective_container = _resolve_container(container)
 
         # Upload to GCS
-        _ = content_type or file.content_type
+        upload_stream = _UploadStream(file_contents)
+        upload_stream.content_type = content_type or file.content_type
         object_info = client.upload_obj(
             container=effective_container,
-            file_obj=BytesIO(file_contents),
+            file_obj=upload_stream,
             remote_path=key,
         )
 
