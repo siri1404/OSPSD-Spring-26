@@ -7,7 +7,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-from cloud_storage_client_api.exceptions import StorageOperationError
+from cloud_storage_client_api.exceptions import StorageBackendError
 from gcp_client_impl.client import GCPClientConfig, GCPCloudStorageClient
 
 
@@ -36,7 +36,7 @@ class TestBuildCredentials:
     def test_raises_for_invalid_service_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GCP_SERVICE_KEY", "not-valid-json-!!!")
         monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
-        with patch("gcp_client_impl.client.service_account"), pytest.raises(StorageOperationError, match="GCP_SERVICE_KEY"):
+        with patch("gcp_client_impl.client.service_account"), pytest.raises(StorageBackendError, match="GCP_SERVICE_KEY"):
             GCPCloudStorageClient(bucket_name="b")._build_credentials()
 
 

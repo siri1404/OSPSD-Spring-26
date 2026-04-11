@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from cloud_storage_client_api.exceptions import StorageOperationError
+from cloud_storage_client_api.exceptions import StorageBackendError
 from gcp_client_impl.client import GCPCloudStorageClient
 
 
@@ -33,5 +33,5 @@ class TestGCPClientConfig:
     def test_get_bucket_name_raises_when_not_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("GCS_BUCKET_NAME", raising=False)
         client = GCPCloudStorageClient()
-        with pytest.raises(StorageOperationError, match="GCS_BUCKET_NAME"):
+        with pytest.raises(StorageBackendError, match="GCS_BUCKET_NAME"):
             client._get_bucket_name()

@@ -1,6 +1,7 @@
 [project]
 name = "cloud-storage-adapter"
 version = "0.1.0"
+description = "HTTP adapter for cloud storage operations"
 requires-python = ">=3.11"
 dependencies = [
     "cloud-storage-client-api",

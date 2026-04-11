@@ -1,5 +1,7 @@
 # OSPSD Spring '26 - Cloud Storage Client
 
+> **⚠️ HW3 Status:** This project has been refactored to align with the shared Cloud Storage API contract (v1.0.0).  
+> See [FIRST_SUBMISSION.md](FIRST_SUBMISSION.md), [CLOUD_STORAGE_API_MEMO.md](CLOUD_STORAGE_API_MEMO.md), and [TEAM_2_MIGRATION_PLAN.md](TEAM_2_MIGRATION_PLAN.md) for details.
 
 [![CircleCI](https://dl.circleci.com/status-badge/img/gh/siri1404/OSPSD-Spring-26/tree/hw-2.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/siri1404/OSPSD-Spring-26/tree/hw-2)
 ![Coverage](https://img.shields.io/badge/coverage-85%25%2B-brightgreen)

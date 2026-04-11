@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
 from cloud_storage_client_api import CloudStorageClient, ObjectInfo
-from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageOperationError, StorageValidationError
+from cloud_storage_client_api.exceptions import ObjectNotFoundError, StorageBackendError
 from cloud_storage_service_api_client import AuthenticatedClient
 from cloud_storage_service_api_client.api.storage import (
     delete_object_delete_key_delete,
@@ -165,7 +165,7 @@ class CloudStorageAdapter(CloudStorageClient):
     def _raise_validation_or_runtime(operation: str, parsed: object, status_code: int) -> NoReturn:
         if isinstance(parsed, HTTPValidationError):
             msg = f"{operation} request validation failed (status {status_code})"
-            raise StorageValidationError(msg)
+            raise StorageBackendError(msg)
 
         msg = f"{operation} failed with status {status_code}"
-        raise StorageOperationError(msg)
+        raise StorageBackendError(msg)

@@ -265,11 +265,31 @@ name = "cloud-storage-client-api"
 version = "0.1.0"
 source = { editable = "components/cloud_storage_client_api" }
 
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.17.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.2.1" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.7" },
+]
+provides-extras = ["dev"]
+
 [[package]]
 name = "cloud-storage-service"
 version = "1.0.0"
 source = { editable = "components/cloud_storage_service" }
 dependencies = [
+    { name = "cloud-storage-client-api" },
     { name = "fastapi" },
     { name = "gcp-client-impl" },
     { name = "google-auth" },
@@ -289,6 +309,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "gcp-client-impl", editable = "components/gcp_client_impl" },
     { name = "google-auth", specifier = ">=2.27.0" },
@@ -519,13 +540,28 @@ dependencies = [
     { name = "python-dotenv" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "cloud-storage-client-api", editable = "components/cloud_storage_client_api" },
     { name = "google-auth", specifier = ">=2.0.0" },
     { name = "google-cloud-storage", specifier = ">=2.10.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.17.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.1" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.2.1" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.10.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.7" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "ghp-import"
