@@ -1,30 +1,44 @@
 from __future__ import annotations
 
-import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+
+from ..types import UNSET, Unset
+
 from dateutil.parser import isoparse
+from typing import cast
+import datetime
+
+
+
+
+
 
 T = TypeVar("T", bound="HealthResponse")
 
 
+
 @_attrs_define
 class HealthResponse:
-    """Response model for health check.
+    """ Response model for health check.
 
-    Attributes:
-        status (str):
-        service (str):
-        timestamp (datetime.datetime):
-    """
+        Attributes:
+            status (str):
+            service (str):
+            timestamp (datetime.datetime):
+     """
 
     status: str
     service: str
     timestamp: datetime.datetime
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+
+
+
+
 
     def to_dict(self) -> dict[str, Any]:
         status = self.status
@@ -33,17 +47,18 @@ class HealthResponse:
 
         timestamp = self.timestamp.isoformat()
 
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update(
-            {
-                "status": status,
-                "service": service,
-                "timestamp": timestamp,
-            }
-        )
+        field_dict.update({
+            "status": status,
+            "service": service,
+            "timestamp": timestamp,
+        })
 
         return field_dict
+
+
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
@@ -54,11 +69,15 @@ class HealthResponse:
 
         timestamp = isoparse(d.pop("timestamp"))
 
+
+
+
         health_response = cls(
             status=status,
             service=service,
             timestamp=timestamp,
         )
+
 
         health_response.additional_properties = d
         return health_response

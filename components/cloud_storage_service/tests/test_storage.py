@@ -414,3 +414,44 @@ def test_head_before_download(
     # Download file
     download_response = client.get("/download/uploads/test.txt", headers=auth_headers)
     assert download_response.status_code == 200
+
+
+@pytest.mark.unit
+def test_upload_notification_failure_does_not_fail_request(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    mock_storage_client: MagicMock,
+    sample_file_data: bytes,
+) -> None:
+    """Test that if chat notification fails during upload, request still returns 200."""
+    from cloud_storage_service import main
+
+    mock_notifier = MagicMock()
+    mock_notifier.notify.side_effect = RuntimeError("chat down")
+    main.app.dependency_overrides[main.get_chat_notification] = lambda: mock_notifier
+    try:
+        files = {"file": ("test.txt", io.BytesIO(sample_file_data), "text/plain")}
+        data = {"key": "test.txt"}
+        response = client.post("/upload", headers=auth_headers, files=files, data=data)
+        assert response.status_code == 200
+    finally:
+        del main.app.dependency_overrides[main.get_chat_notification]
+
+
+@pytest.mark.unit
+def test_delete_notification_failure_does_not_fail_request(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    mock_storage_client: MagicMock,
+) -> None:
+    """Test that if chat notification fails during delete, request still returns 204."""
+    from cloud_storage_service import main
+
+    mock_notifier = MagicMock()
+    mock_notifier.notify.side_effect = RuntimeError("chat down")
+    main.app.dependency_overrides[main.get_chat_notification] = lambda: mock_notifier
+    try:
+        response = client.delete("/delete/test.txt", headers=auth_headers)
+        assert response.status_code == 204
+    finally:
+        del main.app.dependency_overrides[main.get_chat_notification]

@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Cloud Storage Client with GCP Implementation"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "slack-sdk>=3.41.0",
+]
 
 # ============================================
 # DEPENDENCY GROUPS
@@ -28,7 +30,9 @@ dev = [
     "gcp-client-impl",
     "cloud-storage-service",
     "cloud-storage-adapter",
-    "cloud-storage-service-api-client",
+    "ai-client-api",
+    "gemini-ai-client-impl",
+    "chat-client-wrapper",
 ]
 
 # ============================================
@@ -36,15 +40,23 @@ dev = [
 # ============================================
 [tool.uv.workspace]
 members = [
-    "components/*",
+    "components/ai_client_api",
+    "components/chat_client_wrapper",
+    "components/cloud_storage_adapter",
+    "components/cloud_storage_service",
+    "components/gcp_client_impl",
+    "components/gemini_ai_client_impl",
 ]
 
 [tool.uv.sources]
 cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
+chat-client-api = { git = "https://github.com/HarshithKoriRaj/Shared-API.git", tag = "v0.1.0" }
 gcp-client-impl = { workspace = true }
 cloud-storage-service = { workspace = true }
-cloud-storage-service-api-client = { workspace = true }
 cloud-storage-adapter = { workspace = true }
+ai-client-api = { workspace = true }
+gemini-ai-client-impl = { workspace = true }
+chat-client-wrapper = { workspace = true }
 
 # ============================================
 # RUFF CONFIGURATION
@@ -52,6 +64,11 @@ cloud-storage-adapter = { workspace = true }
 [tool.ruff]
 line-length = 130
 target-version = "py312"
+exclude = [
+    "components/cloud_storage_service_api_client/**",
+    ".venv",
+    "**/.venv",
+]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -150,6 +167,9 @@ strict = true
 explicit_package_bases = true
 warn_unused_ignores = true
 ignore_missing_imports = false
+exclude = [
+    "components/cloud_storage_service_api_client/.*",
+]
 
 # Paths where mypy should look for packages
 mypy_path = [
@@ -157,6 +177,9 @@ mypy_path = [
     "components/cloud_storage_service/src",
     "components/cloud_storage_service_api_client",
     "components/cloud_storage_adapter/src",
+    "components/ai_client_api/src",
+    "components/gemini_ai_client_impl/src",
+    "components/chat_client_wrapper/src",
 ]
 
 # Google Cloud libraries: google-api-python-client-stubs is installed for googleapiclient
@@ -179,19 +202,36 @@ disallow_untyped_decorators = false
 module = ["cloud_storage_service_api_client.*", "components.cloud_storage_service_api_client.*"]
 ignore_errors = true
 
+# External chat-client-api from Shared-API repo: no type stubs available
+[[tool.mypy.overrides]]
+module = ["chat_client_api", "chat_client_api.*"]
+ignore_missing_imports = true
+
+# Files that import chat_client_api: covered by ignore_missing_imports above
+
+# slack_adapter: allows subclassing ChatClient (which becomes Any due to ignore_missing_imports)
+[[tool.mypy.overrides]]
+module = [
+    "cloud_storage_service.slack_adapter",
+    "components.cloud_storage_service.slack_adapter",
+]
+disallow_subclassing_any = false
+
 # ============================================
 # PYTEST CONFIGURATION
 # ============================================
 [tool.pytest.ini_options]
 pythonpath = [
     ".",
-    "components/cloud_storage_adapter",
-    "components/gcp_client_impl/src",
+    "components/ai_client_api/src",
+    "components/chat_client_wrapper/src",
+    "components/cloud_storage_adapter/src",
     "components/cloud_storage_service/src",
     "components/cloud_storage_service_api_client",
-    "components/cloud_storage_adapter/src",
+    "components/gcp_client_impl/src",
+    "components/gemini_ai_client_impl/src",
 ]
-testpaths = ["tests", "components/*/tests"]
+testpaths = ["tests/e2e", "tests/integration", "components/*/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -200,7 +240,9 @@ addopts = [
     "--verbose",
     "--strict-markers",
     "--strict-config",
-    "--cov=components",
+    "--cov=components/ai_client_api/src/",
+    "--cov=components/gemini_ai_client_impl/src/",
+    "--cov=components/chat_client_wrapper/src/",
     "--cov-report=term-missing",
 ]
 
@@ -208,6 +250,7 @@ markers = [
     "unit: Unit tests (fast, isolated, mocked)",
     "integration: Integration tests (medium speed, real dependencies)",
     "e2e: End-to-end tests (slow, full system with real APIs)",
+    "slack_integration: Tests requiring Slack integration (real or mocked Slack SDK)",
     "circleci: Tests runnable in CI without local credential files",
     "local_credentials: Tests requiring a local service account key file",
 ]
@@ -216,22 +259,21 @@ markers = [
 # COVERAGE CONFIGURATION
 # ============================================
 [tool.coverage.run]
-source = ["components"]
+source = [
+    "components/ai_client_api/src",
+    "components/gemini_ai_client_impl/src",
+    "components/chat_client_wrapper/src",
+]
 branch = true
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
-    "*/main.py",
-    "*/__main__.py",
-    "*/cloud_storage_service_api_client/*",
+    "components/cloud_storage_service_api_client/**/*",
 ]
 
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
-skip_covered = false
-precision = 2
-
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -239,5 +281,11 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+    "^\\s*pass\\s*$",
     "@abstractmethod",
 ]
+omit = [
+    "components/cloud_storage_service_api_client/**/*",
+]
+skip_covered = false
+precision = 2

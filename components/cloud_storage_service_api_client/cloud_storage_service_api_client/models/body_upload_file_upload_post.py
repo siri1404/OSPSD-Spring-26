@@ -1,30 +1,44 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-
+import json
 from .. import types
+
 from ..types import UNSET, Unset
+
+from ..types import UNSET, Unset
+from typing import cast
+
+
+
+
+
 
 T = TypeVar("T", bound="BodyUploadFileUploadPost")
 
 
+
 @_attrs_define
 class BodyUploadFileUploadPost:
-    """
-    Attributes:
-        file (str): File to upload
-        key (str): Object key/path in storage
-        content_type (None | str | Unset): MIME type of the content
-    """
+    """ 
+        Attributes:
+            file (str): File to upload
+            key (str): Object key/path in storage
+            content_type (None | str | Unset): MIME type of the content
+     """
 
     file: str
     key: str
     content_type: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+
+
+
+
 
     def to_dict(self) -> dict[str, Any]:
         file = self.file
@@ -37,18 +51,18 @@ class BodyUploadFileUploadPost:
         else:
             content_type = self.content_type
 
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update(
-            {
-                "file": file,
-                "key": key,
-            }
-        )
+        field_dict.update({
+            "file": file,
+            "key": key,
+        })
         if content_type is not UNSET:
             field_dict["content_type"] = content_type
 
         return field_dict
+
 
     def to_multipart(self) -> types.RequestFiles:
         files: types.RequestFiles = []
@@ -84,6 +98,7 @@ class BodyUploadFileUploadPost:
 
         return files
 
+
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
@@ -100,11 +115,13 @@ class BodyUploadFileUploadPost:
 
         content_type = _parse_content_type(d.pop("content_type", UNSET))
 
+
         body_upload_file_upload_post = cls(
             file=file,
             key=key,
             content_type=content_type,
         )
+
 
         body_upload_file_upload_post.additional_properties = d
         return body_upload_file_upload_post

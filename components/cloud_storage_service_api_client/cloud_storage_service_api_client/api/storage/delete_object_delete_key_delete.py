@@ -4,42 +4,59 @@ from urllib.parse import quote
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response, UNSET
+from ... import errors
+
 from ...models.http_validation_error import HTTPValidationError
-from ...types import Response, UNSET, Unset
+from ...types import UNSET, Unset
+from typing import cast
+
 
 
 def _get_kwargs(
     key: str,
     *,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> dict[str, Any]:
+    
+
+    
 
     params: dict[str, Any] = {}
-    params["container"] = container
+
+    json_container: None | str | Unset
+    if isinstance(container, Unset):
+        json_container = UNSET
+    else:
+        json_container = container
+    params["container"] = json_container
+
+
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
 
     _kwargs: dict[str, Any] = {
         "method": "delete",
-        "url": "/delete/{key}".format(
-            key=quote(str(key), safe=""),
-        ),
+        "url": "/delete/{key}".format(key=quote(str(key), safe=""),),
         "params": params,
     }
+
 
     return _kwargs
 
 
-def _parse_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | HTTPValidationError | None:
+
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Any | HTTPValidationError | None:
     if response.status_code == 204:
         response_204 = cast(Any, None)
         return response_204
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
+
+
 
         return response_422
 
@@ -49,9 +66,7 @@ def _parse_response(
         return None
 
 
-def _build_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | HTTPValidationError]:
+def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[Any | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,9 +79,10 @@ def sync_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> Response[Any | HTTPValidationError]:
-    """Delete Object
+    """ Delete Object
 
      Delete an object from cloud storage.
 
@@ -76,12 +92,15 @@ def sync_detailed(
         key: Object key/path to delete.
         token: Validated access token.
         client: GCP storage client.
+        chat_notification: Optional chat notification wrapper.
+        container: Optional storage container or bucket override.
 
     Raises:
         HTTPException: If file not found or deletion fails.
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -89,11 +108,13 @@ def sync_detailed(
 
     Returns:
         Response[Any | HTTPValidationError]
-    """
+     """
+
 
     kwargs = _get_kwargs(
         key=key,
-        container=container,
+container=container,
+
     )
 
     response = client.get_httpx_client().request(
@@ -102,14 +123,14 @@ def sync_detailed(
 
     return _build_response(client=client, response=response)
 
-
 def sync(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> Any | HTTPValidationError | None:
-    """Delete Object
+    """ Delete Object
 
      Delete an object from cloud storage.
 
@@ -119,12 +140,15 @@ def sync(
         key: Object key/path to delete.
         token: Validated access token.
         client: GCP storage client.
+        chat_notification: Optional chat notification wrapper.
+        container: Optional storage container or bucket override.
 
     Raises:
         HTTPException: If file not found or deletion fails.
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -132,22 +156,24 @@ def sync(
 
     Returns:
         Any | HTTPValidationError
-    """
+     """
+
 
     return sync_detailed(
         key=key,
-        client=client,
-        container=container,
-    ).parsed
+client=client,
+container=container,
 
+    ).parsed
 
 async def asyncio_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> Response[Any | HTTPValidationError]:
-    """Delete Object
+    """ Delete Object
 
      Delete an object from cloud storage.
 
@@ -157,12 +183,15 @@ async def asyncio_detailed(
         key: Object key/path to delete.
         token: Validated access token.
         client: GCP storage client.
+        chat_notification: Optional chat notification wrapper.
+        container: Optional storage container or bucket override.
 
     Raises:
         HTTPException: If file not found or deletion fails.
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -170,25 +199,29 @@ async def asyncio_detailed(
 
     Returns:
         Response[Any | HTTPValidationError]
-    """
+     """
+
 
     kwargs = _get_kwargs(
         key=key,
-        container=container,
+container=container,
+
     )
 
-    response = await client.get_async_httpx_client().request(**kwargs)
+    response = await client.get_async_httpx_client().request(
+        **kwargs
+    )
 
     return _build_response(client=client, response=response)
-
 
 async def asyncio(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> Any | HTTPValidationError | None:
-    """Delete Object
+    """ Delete Object
 
      Delete an object from cloud storage.
 
@@ -198,12 +231,15 @@ async def asyncio(
         key: Object key/path to delete.
         token: Validated access token.
         client: GCP storage client.
+        chat_notification: Optional chat notification wrapper.
+        container: Optional storage container or bucket override.
 
     Raises:
         HTTPException: If file not found or deletion fails.
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -211,12 +247,12 @@ async def asyncio(
 
     Returns:
         Any | HTTPValidationError
-    """
+     """
 
-    return (
-        await asyncio_detailed(
-            key=key,
-            client=client,
-            container=container,
-        )
-    ).parsed
+
+    return (await asyncio_detailed(
+        key=key,
+client=client,
+container=container,
+
+    )).parsed

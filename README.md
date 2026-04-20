@@ -34,11 +34,13 @@ The project demonstrates clean architectural patterns through:
 
 ## Architecture Overview
 
-This repository contains **four local components** plus one **external shared API dependency**:
+This repository contains **five local components** plus two **external shared API dependencies**:
 
-### External Shared API: `cloud_storage_api` (Git Dependency)
+### External Shared APIs
 
-The provider-agnostic contract is maintained in the cross-team repository and consumed here via `uv` git source pinning (`tag = "v1.0.0"`).
+**cloud_storage_api** (Git Dependency)
+
+The provider-agnostic storage contract is maintained in the cross-team repository and consumed here via `uv` git source pinning (`tag = "v1.0.0"`).
 
 **Key Features:**
 - Abstract `CloudStorageClient` base class with 6 methods
@@ -48,7 +50,30 @@ The provider-agnostic contract is maintained in the cross-team repository and co
 
 **Source of truth:** `cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }`
 
-### Component 1: `gcp_client_impl` (Implementation)
+**chat_client_api** (Git Dependency - Team 9)
+
+The cross-team chat interface from Team 9. Enables pluggable chat integrations (Slack, Teams, Discord, etc.) without tying storage logic to a specific chat provider.
+
+**Key Features:**
+- Abstract `ChatClient` base class with send/fetch/delete message methods
+- `Message` dataclass for message metadata
+- `Channel` dataclass for channel information
+- Shared exception taxonomy (`ChannelNotFoundError`, `MessageNotFoundError`, etc.)
+
+**Source of truth:** `chat-client-api = { git = "https://github.com/HarshithKoriRaj/Shared-API.git", tag = "v0.1.0" }`
+
+### Component 1: `chat_client_wrapper` (Notification Formatter)
+
+Wrapper providing a simple notification interface on top of Team 9's `ChatClient` abstraction.
+
+**Key Features:**
+- `ChatNotificationWrapper.notify(message)` method for one-liner event notifications
+- Pre-formatted messages for storage events (upload, delete, AI actions) via `NotificationMessages` utility
+- Configurable channel ID (constructor or `CHAT_CHANNEL_ID` env var)
+- Error resilience: notifications fail gracefully without disrupting storage operations
+- Pluggable: works with any team that implements the shared `ChatClient` interface
+
+### Component 2: `gcp_client_impl` (Implementation)
 
 Google Cloud Storage implementation of the abstract interface.
 
@@ -58,7 +83,7 @@ Google Cloud Storage implementation of the abstract interface.
 - Configuration via environment variables with constructor argument overrides
 - Comprehensive error handling with clear messages
 
-### Component 2: `cloud_storage_adapter` (HTTP Adapter)
+### Component 3: `cloud_storage_adapter` (HTTP Adapter)
 
 HTTP wrapper implementing `CloudStorageClient` by proxying requests to the cloud storage service via OpenAPI client.
 
@@ -69,7 +94,7 @@ HTTP wrapper implementing `CloudStorageClient` by proxying requests to the cloud
 - Metadata extraction from response headers
 - Configurable service base URL (default: local service)
 
-### Component 3: `cloud_storage_service` (FastAPI Service)
+### Component 4: `cloud_storage_service` (FastAPI Service)
 
 FastAPI microservice exposing cloud storage operations via REST endpoints with OAuth 2.0 authentication.
 
@@ -80,7 +105,7 @@ FastAPI microservice exposing cloud storage operations via REST endpoints with O
 - Pluggable backend using the shared `CloudStorageClient` contract
 - Pydantic models for request/response validation
 
-### Component 4: `cloud_storage_service_api_client` (Generated API Client)
+### Component 5: `cloud_storage_service_api_client` (Generated API Client)
 
 Type-safe OpenAPI-generated async HTTP client for the cloud storage service.
 
@@ -308,6 +333,69 @@ Google Cloud Storage implementation. See [components/gcp_client_impl/README.md](
 1. `credentials_path` argument or `GOOGLE_APPLICATION_CREDENTIALS` env var (service account file)
 2. `GCP_SERVICE_KEY` env var (raw or base64-encoded service account JSON)
 3. Application Default Credentials (gcloud login, Workload Identity, etc.)
+
+---
+
+## Cross-Vertical Integration: Team 9 Chat
+
+### What is Cross-Vertical Integration?
+
+Team 6's cloud storage service was extended to use Team 9's chat service. Users are now notified in Slack whenever storage operations occur.
+
+### How Team 9's Chat API Was Adopted
+
+We adopted Team 9's shared chat interface (`chat_client_api`). This follows the same clean architecture pattern:
+
+1. **Shared Interface:** Team 9 created `chat_client_api` with a `ChatClient` abstract base class (similar to how Team 6 uses `cloud_storage_api`)
+2. **Implementation Adapter:** We created `slack_adapter.py` in the storage service that implements Team 9's `ChatClient` interface and talks to Slack
+3. **Wrapper Component:** We created `chat_client_wrapper/` component with a `ChatNotificationWrapper` class that provides a simple `notify()` method
+4. **Integration:** The storage service now sends chat notifications on key events (file upload, file delete, AI actions)
+
+### How Chat Notifications Work
+
+When you perform a storage operation or run an AI chat command, the service automatically sends a formatted message to a configured Slack channel:
+
+**Upload Event:**
+```
+📤 File uploaded: `report.pdf` in container `my-bucket` (1024 bytes)
+```
+
+**Delete Event:**
+```
+🗑️ File deleted: `report.pdf` from container `my-bucket`
+```
+
+**AI Action Event:**
+```
+🤖 AI performed action: `list_files` on container `my-bucket`
+   Result: Found 5 matching objects
+```
+
+### Configuration
+
+Enable chat notifications by setting:
+```bash
+CHAT_CHANNEL_ID=your-slack-channel-id
+SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
+```
+
+If `CHAT_CHANNEL_ID` is not set, notifications gracefully disable (storage operations continue to work).
+
+### Architecture Pattern
+
+```
+Storage Service (FastAPI)
+    ↓
+ChatNotificationWrapper (generic notification formatter)
+    ↓
+SlackChatClient (Team 9's ChatClient implementation)
+    ↓
+Slack API (via Team 9's slack_sdk dependency)
+    ↓
+Slack Channel
+```
+
+The key insight: **Chat is pluggable.** We depend on Team 9's abstract `ChatClient` interface, not the Slack implementation directly. If Team 9 adds a Teams adapter or Discord adapter to their vertical, we can swap implementations without changing storage code.
 
 ---
 

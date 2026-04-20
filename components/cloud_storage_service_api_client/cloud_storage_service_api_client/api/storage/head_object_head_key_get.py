@@ -1,47 +1,66 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response, UNSET
+from ... import errors
+
 from ...models.http_validation_error import HTTPValidationError
 from ...models.object_info_response import ObjectInfoResponse
-from ...types import Response, UNSET, Unset
+from ...types import UNSET, Unset
+from typing import cast
+
 
 
 def _get_kwargs(
     key: str,
     *,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> dict[str, Any]:
+    
+
+    
 
     params: dict[str, Any] = {}
-    params["container"] = container
+
+    json_container: None | str | Unset
+    if isinstance(container, Unset):
+        json_container = UNSET
+    else:
+        json_container = container
+    params["container"] = json_container
+
+
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
 
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/head/{key}".format(
-            key=quote(str(key), safe=""),
-        ),
+        "url": "/head/{key}".format(key=quote(str(key), safe=""),),
         "params": params,
     }
+
 
     return _kwargs
 
 
-def _parse_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | ObjectInfoResponse | None:
+
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> HTTPValidationError | ObjectInfoResponse | None:
     if response.status_code == 200:
         response_200 = ObjectInfoResponse.from_dict(response.json())
+
+
 
         return response_200
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
+
+
 
         return response_422
 
@@ -51,9 +70,7 @@ def _parse_response(
         return None
 
 
-def _build_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | ObjectInfoResponse]:
+def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[HTTPValidationError | ObjectInfoResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -66,9 +83,10 @@ def sync_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> Response[HTTPValidationError | ObjectInfoResponse]:
-    """Head Object
+    """ Head Object
 
      Get metadata for an object without downloading its contents.
 
@@ -78,6 +96,7 @@ def sync_detailed(
         key: Object key/path to query.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         Object metadata.
@@ -87,6 +106,7 @@ def sync_detailed(
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -94,11 +114,13 @@ def sync_detailed(
 
     Returns:
         Response[HTTPValidationError | ObjectInfoResponse]
-    """
+     """
+
 
     kwargs = _get_kwargs(
         key=key,
-        container=container,
+container=container,
+
     )
 
     response = client.get_httpx_client().request(
@@ -107,14 +129,14 @@ def sync_detailed(
 
     return _build_response(client=client, response=response)
 
-
 def sync(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> HTTPValidationError | ObjectInfoResponse | None:
-    """Head Object
+    """ Head Object
 
      Get metadata for an object without downloading its contents.
 
@@ -124,6 +146,7 @@ def sync(
         key: Object key/path to query.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         Object metadata.
@@ -133,6 +156,7 @@ def sync(
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -140,22 +164,24 @@ def sync(
 
     Returns:
         HTTPValidationError | ObjectInfoResponse
-    """
+     """
+
 
     return sync_detailed(
         key=key,
-        client=client,
-        container=container,
-    ).parsed
+client=client,
+container=container,
 
+    ).parsed
 
 async def asyncio_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> Response[HTTPValidationError | ObjectInfoResponse]:
-    """Head Object
+    """ Head Object
 
      Get metadata for an object without downloading its contents.
 
@@ -165,6 +191,7 @@ async def asyncio_detailed(
         key: Object key/path to query.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         Object metadata.
@@ -174,6 +201,7 @@ async def asyncio_detailed(
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -181,25 +209,29 @@ async def asyncio_detailed(
 
     Returns:
         Response[HTTPValidationError | ObjectInfoResponse]
-    """
+     """
+
 
     kwargs = _get_kwargs(
         key=key,
-        container=container,
+container=container,
+
     )
 
-    response = await client.get_async_httpx_client().request(**kwargs)
+    response = await client.get_async_httpx_client().request(
+        **kwargs
+    )
 
     return _build_response(client=client, response=response)
-
 
 async def asyncio(
     key: str,
     *,
     client: AuthenticatedClient,
-    container: str | Unset = UNSET,
+    container: None | str | Unset = UNSET,
+
 ) -> HTTPValidationError | ObjectInfoResponse | None:
-    """Head Object
+    """ Head Object
 
      Get metadata for an object without downloading its contents.
 
@@ -209,6 +241,7 @@ async def asyncio(
         key: Object key/path to query.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         Object metadata.
@@ -218,6 +251,7 @@ async def asyncio(
 
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -225,12 +259,12 @@ async def asyncio(
 
     Returns:
         HTTPValidationError | ObjectInfoResponse
-    """
+     """
 
-    return (
-        await asyncio_detailed(
-            key=key,
-            client=client,
-            container=container,
-        )
-    ).parsed
+
+    return (await asyncio_detailed(
+        key=key,
+client=client,
+container=container,
+
+    )).parsed

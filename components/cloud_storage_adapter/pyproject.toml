@@ -18,4 +18,4 @@ packages = ["src/cloud_storage_adapter"]
 
 [tool.uv.sources]
 cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
-cloud-storage-service-api-client = { workspace = true }
+cloud-storage-service-api-client = { path = "../cloud_storage_service_api_client" }
