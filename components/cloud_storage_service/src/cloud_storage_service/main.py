@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import anyio
+from ai_client_api import AiClientApi
 from cloud_storage_api import CloudStorageClient
 from cloud_storage_api.exceptions import (
     AuthenticationError,
@@ -23,10 +24,11 @@ from cloud_storage_api.exceptions import (
     StorageBackendError,
 )
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials
 from gcp_client_impl import GCPCloudStorageClient
+from gemini_ai_client_impl import GeminiAiClient
 
 # Load .env file from project root
 env_path = Path(__file__).resolve().parents[4] / ".env"
@@ -91,6 +93,20 @@ def get_storage_client(token: Annotated[str, Depends(verify_token)]) -> CloudSto
         return GCPCloudStorageClient()
     # Otherwise use the provided OAuth token (from session mapping or direct provider token)
     return GCPCloudStorageClient(oauth_token=token)
+
+
+def get_ai_client(
+    storage_client: CloudStorageClient = Depends(get_storage_client),
+) -> AiClientApi:
+    """Get AI client instance with injected storage client.
+
+    Args:
+        storage_client: Configured CloudStorageClient.
+
+    Returns:
+        Configured AiClientApi instance.
+    """
+    return GeminiAiClient(storage_client=storage_client)
 
 
 def object_info_to_response(obj: Any) -> ObjectInfoResponse:
@@ -481,6 +497,53 @@ async def delete_object(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete file: {exc}",
         ) from exc
+
+
+# ============================================================================
+# AI Chat Endpoints
+# ============================================================================
+
+
+@app.post("/ai/chat", tags=["AI"])
+async def ai_chat(
+    prompt: str = Body(..., embed=True, description="Natural language prompt"),
+    container: str | None = Body(None, embed=True, description="Default container for operations"),
+    token: str = Depends(verify_token),
+    ai_client: AiClientApi = Depends(get_ai_client),
+) -> dict[str, str]:
+    """Natural language interface to cloud storage operations.
+
+    Accepts a plain-English prompt and returns a human-readable response.
+    The AI will call the appropriate storage operation based on the prompt.
+    Optionally accepts a container name to use as the default for storage operations.
+
+    Args:
+        prompt: The user's natural language request.
+        container: Optional default container for storage operations.
+        token: Validated access token.
+        ai_client: Configured AiClientApi instance.
+
+    Returns:
+        Response dict with "response" key containing the AI's answer.
+
+    Raises:
+        HTTPException: If AI processing or storage operations fail.
+    """
+    context: dict[str, Any] = {}
+    if container is not None:
+        context["container"] = container
+    try:
+        response = ai_client.send_message(prompt=prompt, context=context or None)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    except ObjectNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except StorageBackendError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    else:
+        return {"response": response}
 
 
 @app.get("/head/{key:path}", response_model=ObjectInfoResponse, tags=["Storage"])

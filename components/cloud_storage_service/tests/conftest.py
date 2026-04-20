@@ -6,16 +6,11 @@ import os
 from collections.abc import AsyncGenerator, Generator
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
-
 
 # Set test environment variables before importing the app
 os.environ["GOOGLE_OAUTH_CLIENT_ID"] = "test-client-id.apps.googleusercontent.com"
@@ -136,3 +131,35 @@ def sample_object_info() -> dict[str, str | int | None]:
         "content_type": "text/plain",
         "metadata": None,
     }
+
+
+@pytest.fixture
+def mock_ai_client() -> MagicMock:
+    """Mock AiClientApi for testing.
+
+    Returns:
+        Mocked AiClientApi instance.
+    """
+    mock = MagicMock()
+    mock.send_message.return_value = "AI response"
+    return mock
+
+
+@pytest.fixture
+def mock_get_ai_client(mock_ai_client: MagicMock) -> Generator[MagicMock, None, None]:
+    """Override get_ai_client dependency with mock.
+
+    Args:
+        mock_ai_client: Mocked AiClientApi instance.
+
+    Yields:
+        Mocked AiClientApi instance.
+    """
+    from cloud_storage_service import main
+
+    def _override() -> MagicMock:
+        return mock_ai_client
+
+    app.dependency_overrides[main.get_ai_client] = _override
+    yield mock_ai_client
+    del app.dependency_overrides[main.get_ai_client]

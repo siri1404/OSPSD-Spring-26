@@ -29,6 +29,8 @@ dev = [
     "cloud-storage-service",
     "cloud-storage-adapter",
     "cloud-storage-service-api-client",
+    "ai-client-api",
+    "gemini-ai-client-impl",
 ]
 
 # ============================================
@@ -45,6 +47,8 @@ gcp-client-impl = { workspace = true }
 cloud-storage-service = { workspace = true }
 cloud-storage-service-api-client = { workspace = true }
 cloud-storage-adapter = { workspace = true }
+ai-client-api = { workspace = true }
+gemini-ai-client-impl = { workspace = true }
 
 # ============================================
 # RUFF CONFIGURATION
@@ -157,6 +161,8 @@ mypy_path = [
     "components/cloud_storage_service/src",
     "components/cloud_storage_service_api_client",
     "components/cloud_storage_adapter/src",
+    "components/ai_client_api/src",
+    "components/gemini_ai_client_impl/src",
 ]
 
 # Google Cloud libraries: google-api-python-client-stubs is installed for googleapiclient

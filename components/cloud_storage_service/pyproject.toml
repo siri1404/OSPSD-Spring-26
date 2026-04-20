@@ -17,6 +17,8 @@ dependencies = [
     "google-auth>=2.27.0",
     "gcp-client-impl",
     "cloud-storage-api",
+    "ai-client-api",
+    "gemini-ai-client-impl",
 ]
 
 [project.optional-dependencies]
@@ -32,4 +34,6 @@ packages = ["src/cloud_storage_service"]
 [tool.uv.sources]
 cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
 gcp-client-impl = { workspace = true }
+ai-client-api = { workspace = true }
+gemini-ai-client-impl = { workspace = true }
 
