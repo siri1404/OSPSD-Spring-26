@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import io
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 from ai_client_api import AIResponse
-from fastapi.testclient import TestClient
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 
 @pytest.mark.unit

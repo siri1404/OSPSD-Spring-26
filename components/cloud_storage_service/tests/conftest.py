@@ -103,8 +103,9 @@ def mock_storage_client() -> Generator[MagicMock, None, None]:
 
     yield mock_client
 
-    # Clean up
-    app.dependency_overrides.clear()
+    # Clean up - remove only this override
+    if main.get_storage_client in app.dependency_overrides:
+        del app.dependency_overrides[main.get_storage_client]
 
 
 @pytest.fixture
