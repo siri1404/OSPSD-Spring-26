@@ -9,9 +9,14 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Any
+import logging
+from functools import lru_cache
 
 import anyio
 from ai_client_api import AiClientApi
+from chat_client_api import ChatClient, get_client
+from chat_client_wrapper import ChatNotificationWrapper
+from chat_client_wrapper.notifications import NotificationMessages
 from cloud_storage_api import CloudStorageClient
 from cloud_storage_api.exceptions import (
     AuthenticationError,
@@ -24,7 +29,7 @@ from cloud_storage_api.exceptions import (
     StorageBackendError,
 )
 from dotenv import load_dotenv
-from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials
 from gcp_client_impl import GCPCloudStorageClient
@@ -107,6 +112,39 @@ def get_ai_client(
         Configured AiClientApi instance.
     """
     return GeminiAiClient(storage_client=storage_client)
+
+
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _get_cached_chat_client() -> ChatClient | None:
+    """Return a cached ChatClient instance from the shared API, or None on failure."""
+    try:
+        return get_client()
+    except Exception:
+        logger.exception("Error initializing chat client")
+        return None
+
+
+def get_chat_notification() -> ChatNotificationWrapper | None:
+    """Get chat notification wrapper with real ChatClient from shared API.
+
+    Returns None if CHAT_CHANNEL_ID is not configured or if chat client setup fails.
+    """
+    channel_id = os.getenv("CHAT_CHANNEL_ID")
+    if not channel_id:
+        return None
+
+    chat_client = _get_cached_chat_client()
+    if not chat_client:
+        return None
+
+    try:
+        return ChatNotificationWrapper(chat_client=chat_client, channel_id=channel_id)
+    except Exception as exc:
+        logger.warning("Could not initialize chat notifications: %s", exc)
+        return None
 
 
 def object_info_to_response(obj: Any) -> ObjectInfoResponse:
@@ -264,6 +302,7 @@ async def upload_file(  # noqa: PLR0913
     content_type: Annotated[str | None, Form(description="MIME type of the content")] = None,
     token: str = Depends(verify_token),
     client: CloudStorageClient = Depends(get_storage_client),
+    chat_notification: Annotated[ChatNotificationWrapper | None, Depends(get_chat_notification)] = None,
     container: Annotated[str | None, Query(description="Storage container or bucket name")] = None,
 ) -> ObjectInfoResponse:
     """Upload a file to cloud storage.
@@ -276,6 +315,7 @@ async def upload_file(  # noqa: PLR0913
         content_type: Optional MIME type.
         token: Validated access token.
         client: GCP storage client.
+        chat_notification: Optional chat notification wrapper.
         container: Optional storage container or bucket override.
 
     Returns:
@@ -297,6 +337,19 @@ async def upload_file(  # noqa: PLR0913
             file_obj=upload_stream,
             remote_path=key,
         )
+
+        # Send chat notification
+        if chat_notification:
+            msg = NotificationMessages.file_uploaded(
+                container=effective_container,
+                object_name=key,
+                size_bytes=object_info.size_bytes,
+            )
+            try:
+                chat_notification.notify(msg)
+            except Exception as exc:
+                # Log but don't fail the upload if notification fails
+                logger.warning("Failed to send chat notification: %s", exc)
 
         return object_info_to_response(object_info)
     except AuthenticationError as exc:
@@ -453,6 +506,7 @@ async def delete_object(
     key: str,
     token: Annotated[str, Depends(verify_token)],
     client: Annotated[CloudStorageClient, Depends(get_storage_client)],
+    chat_notification: Annotated[ChatNotificationWrapper | None, Depends(get_chat_notification)] = None,
     container: Annotated[str | None, Query(description="Storage container or bucket name")] = None,
 ) -> None:
     """Delete an object from cloud storage.
@@ -463,6 +517,7 @@ async def delete_object(
         key: Object key/path to delete.
         token: Validated access token.
         client: GCP storage client.
+        chat_notification: Optional chat notification wrapper.
         container: Optional storage container or bucket override.
 
     Raises:
@@ -471,6 +526,18 @@ async def delete_object(
     try:
         effective_container = _resolve_container(container)
         client.delete_file(container=effective_container, object_name=key)
+
+        # Send chat notification
+        if chat_notification:
+            msg = NotificationMessages.file_deleted(
+                container=effective_container,
+                object_name=key,
+            )
+            try:
+                chat_notification.notify(msg)
+            except Exception as exc:
+                # Log but don't fail the delete if notification fails
+                logger.warning("Failed to send chat notification: %s", exc)
     except AuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed") from exc
     except ContainerNotFoundError as exc:
@@ -507,21 +574,23 @@ async def delete_object(
 @app.post("/ai/chat", tags=["AI"])
 async def ai_chat(
     prompt: str = Body(..., embed=True, description="Natural language prompt"),
-    container: str | None = Body(None, embed=True, description="Default container for operations"),
+    x_container: Annotated[str | None, Header(alias="X-Container")] = None,
     token: str = Depends(verify_token),
     ai_client: AiClientApi = Depends(get_ai_client),
-) -> dict[str, str]:
+    chat_notification: Annotated[ChatNotificationWrapper | None, Depends(get_chat_notification)] = None,
+) -> dict[str, str | None]:
     """Natural language interface to cloud storage operations.
 
     Accepts a plain-English prompt and returns a human-readable response.
     The AI will call the appropriate storage operation based on the prompt.
-    Optionally accepts a container name to use as the default for storage operations.
+    Optionally accepts a container name via the X-Container header for default storage operations.
 
     Args:
         prompt: The user's natural language request.
-        container: Optional default container for storage operations.
+        x_container: Optional default container for storage operations (from X-Container header).
         token: Validated access token.
         ai_client: Configured AiClientApi instance.
+        chat_notification: Optional chat notification wrapper.
 
     Returns:
         Response dict with "response" key containing the AI's answer.
@@ -529,11 +598,37 @@ async def ai_chat(
     Raises:
         HTTPException: If AI processing or storage operations fail.
     """
+    # Build context only when a non-empty container is provided (avoid empty-string semantics)
     context: dict[str, Any] = {}
-    if container is not None:
-        context["container"] = container
+    if x_container:
+        context["container"] = x_container
     try:
-        response = ai_client.send_message(prompt=prompt, context=context or None)
+        ai_response = ai_client.send_message(prompt=prompt, context=context or None)
+
+        # Send chat notification about AI action with real action data
+        if chat_notification:
+            # Resolve container for notification (use configured default if none provided)
+            resolved_container = _resolve_container(x_container)
+
+            # Extract object_name from the last tool args when available
+            last_tool_args = getattr(ai_response, "tool_args", None) or {}
+            object_name = last_tool_args.get("object_name") or last_tool_args.get("remote_path") or None
+
+            # Truncate result for notifications safely
+            result_text = ai_response.text if len(ai_response.text) <= 100 else ai_response.text[:100] + "..."
+
+            msg = NotificationMessages.ai_action_performed(
+                action=ai_response.action_taken or "request_processed",
+                container=resolved_container,
+                object_name=object_name,
+                result=result_text,
+            )
+            try:
+                chat_notification.notify(msg)
+            except Exception as exc:
+                # Log but don't fail the AI response if notification fails
+                logger.warning("Failed to send chat notification: %s", exc)
+
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     except ObjectNotFoundError as exc:
@@ -543,7 +638,10 @@ async def ai_chat(
     except StorageBackendError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     else:
-        return {"response": response}
+        return {
+            "response": ai_response.text,
+            "action_taken": ai_response.action_taken,
+        }
 
 
 @app.get("/head/{key:path}", response_model=ObjectInfoResponse, tags=["Storage"])
@@ -601,26 +699,4 @@ async def head_object(
         ) from exc
 
 
-# ============================================================================
-# Error Handlers
-# ============================================================================
-
-
-@app.exception_handler(404)
-async def not_found_handler(request: Any, exc: Any) -> Response:
-    """Handle 404 errors."""
-    return Response(
-        status_code=404,
-        content='{"error": "Not Found", "detail": "The requested resource was not found"}',
-        media_type="application/json",
-    )
-
-
-@app.exception_handler(500)
-async def internal_error_handler(request: Any, exc: Any) -> Response:
-    """Handle 500 errors."""
-    return Response(
-        status_code=500,
-        content='{"error": "Internal Server Error", "detail": "An unexpected error occurred"}',
-        media_type="application/json",
-    )
+# Note: Default FastAPI exception handlers are used to preserve HTTPException details.

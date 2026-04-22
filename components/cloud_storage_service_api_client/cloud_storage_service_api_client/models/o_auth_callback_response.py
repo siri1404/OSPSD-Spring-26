@@ -1,30 +1,43 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
+from ..types import UNSET, Unset
+from typing import cast
+
+
+
+
+
+
 T = TypeVar("T", bound="OAuthCallbackResponse")
+
 
 
 @_attrs_define
 class OAuthCallbackResponse:
-    """Response model for OAuth callback.
+    """ Response model for OAuth callback.
 
-    Attributes:
-        access_token (str):
-        token_type (str | Unset):  Default: 'bearer'.
-        expires_in (int | None | Unset):
-    """
+        Attributes:
+            access_token (str):
+            token_type (str | Unset):  Default: 'bearer'.
+            expires_in (int | None | Unset):
+     """
 
     access_token: str
-    token_type: str | Unset = "bearer"
+    token_type: str | Unset = 'bearer'
     expires_in: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+
+
+
+
 
     def to_dict(self) -> dict[str, Any]:
         access_token = self.access_token
@@ -37,19 +50,20 @@ class OAuthCallbackResponse:
         else:
             expires_in = self.expires_in
 
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update(
-            {
-                "access_token": access_token,
-            }
-        )
+        field_dict.update({
+            "access_token": access_token,
+        })
         if token_type is not UNSET:
             field_dict["token_type"] = token_type
         if expires_in is not UNSET:
             field_dict["expires_in"] = expires_in
 
         return field_dict
+
+
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
@@ -67,11 +81,13 @@ class OAuthCallbackResponse:
 
         expires_in = _parse_expires_in(d.pop("expires_in", UNSET))
 
+
         o_auth_callback_response = cls(
             access_token=access_token,
             token_type=token_type,
             expires_in=expires_in,
         )
+
 
         o_auth_callback_response.additional_properties = d
         return o_auth_callback_response

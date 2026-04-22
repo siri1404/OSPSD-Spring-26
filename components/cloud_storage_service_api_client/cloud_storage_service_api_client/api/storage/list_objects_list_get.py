@@ -1,27 +1,44 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response, UNSET
+from ... import errors
+
 from ...models.http_validation_error import HTTPValidationError
 from ...models.list_response import ListResponse
-from ...types import UNSET, Response, Unset
+from ...types import UNSET, Unset
+from typing import cast
+
 
 
 def _get_kwargs(
     *,
-    prefix: str | Unset = "",
-    container: str | Unset = UNSET,
+    prefix: str | Unset = '',
+    container: None | str | Unset = UNSET,
+
 ) -> dict[str, Any]:
+    
+
+    
 
     params: dict[str, Any] = {}
 
     params["prefix"] = prefix
-    params["container"] = container
+
+    json_container: None | str | Unset
+    if isinstance(container, Unset):
+        json_container = UNSET
+    else:
+        json_container = container
+    params["container"] = json_container
+
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
 
     _kwargs: dict[str, Any] = {
         "method": "get",
@@ -29,19 +46,23 @@ def _get_kwargs(
         "params": params,
     }
 
+
     return _kwargs
 
 
-def _parse_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | ListResponse | None:
+
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> HTTPValidationError | ListResponse | None:
     if response.status_code == 200:
         response_200 = ListResponse.from_dict(response.json())
+
+
 
         return response_200
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
+
+
 
         return response_422
 
@@ -51,9 +72,7 @@ def _parse_response(
         return None
 
 
-def _build_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | ListResponse]:
+def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[HTTPValidationError | ListResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -65,10 +84,11 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    prefix: str | Unset = "",
-    container: str | Unset = UNSET,
+    prefix: str | Unset = '',
+    container: None | str | Unset = UNSET,
+
 ) -> Response[HTTPValidationError | ListResponse]:
-    """List Objects
+    """ List Objects
 
      List objects in cloud storage with optional prefix filter.
 
@@ -78,6 +98,7 @@ def sync_detailed(
         prefix: Filter objects by key prefix.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         List of objects matching the prefix.
@@ -87,6 +108,7 @@ def sync_detailed(
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -94,11 +116,13 @@ def sync_detailed(
 
     Returns:
         Response[HTTPValidationError | ListResponse]
-    """
+     """
+
 
     kwargs = _get_kwargs(
         prefix=prefix,
-        container=container,
+container=container,
+
     )
 
     response = client.get_httpx_client().request(
@@ -107,14 +131,14 @@ def sync_detailed(
 
     return _build_response(client=client, response=response)
 
-
 def sync(
     *,
     client: AuthenticatedClient,
-    prefix: str | Unset = "",
-    container: str | Unset = UNSET,
+    prefix: str | Unset = '',
+    container: None | str | Unset = UNSET,
+
 ) -> HTTPValidationError | ListResponse | None:
-    """List Objects
+    """ List Objects
 
      List objects in cloud storage with optional prefix filter.
 
@@ -124,6 +148,7 @@ def sync(
         prefix: Filter objects by key prefix.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         List of objects matching the prefix.
@@ -133,6 +158,7 @@ def sync(
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -140,22 +166,24 @@ def sync(
 
     Returns:
         HTTPValidationError | ListResponse
-    """
+     """
+
 
     return sync_detailed(
         client=client,
-        prefix=prefix,
-        container=container,
-    ).parsed
+prefix=prefix,
+container=container,
 
+    ).parsed
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    prefix: str | Unset = "",
-    container: str | Unset = UNSET,
+    prefix: str | Unset = '',
+    container: None | str | Unset = UNSET,
+
 ) -> Response[HTTPValidationError | ListResponse]:
-    """List Objects
+    """ List Objects
 
      List objects in cloud storage with optional prefix filter.
 
@@ -165,6 +193,7 @@ async def asyncio_detailed(
         prefix: Filter objects by key prefix.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         List of objects matching the prefix.
@@ -174,6 +203,7 @@ async def asyncio_detailed(
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -181,25 +211,29 @@ async def asyncio_detailed(
 
     Returns:
         Response[HTTPValidationError | ListResponse]
-    """
+     """
+
 
     kwargs = _get_kwargs(
         prefix=prefix,
-        container=container,
+container=container,
+
     )
 
-    response = await client.get_async_httpx_client().request(**kwargs)
+    response = await client.get_async_httpx_client().request(
+        **kwargs
+    )
 
     return _build_response(client=client, response=response)
-
 
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    prefix: str | Unset = "",
-    container: str | Unset = UNSET,
+    prefix: str | Unset = '',
+    container: None | str | Unset = UNSET,
+
 ) -> HTTPValidationError | ListResponse | None:
-    """List Objects
+    """ List Objects
 
      List objects in cloud storage with optional prefix filter.
 
@@ -209,6 +243,7 @@ async def asyncio(
         prefix: Filter objects by key prefix.
         token: Validated access token.
         client: GCP storage client.
+        container: Optional storage container or bucket override.
 
     Returns:
         List of objects matching the prefix.
@@ -218,6 +253,7 @@ async def asyncio(
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -225,12 +261,12 @@ async def asyncio(
 
     Returns:
         HTTPValidationError | ListResponse
-    """
+     """
 
-    return (
-        await asyncio_detailed(
-            client=client,
-            prefix=prefix,
-            container=container,
-        )
-    ).parsed
+
+    return (await asyncio_detailed(
+        client=client,
+prefix=prefix,
+container=container,
+
+    )).parsed

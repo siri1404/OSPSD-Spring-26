@@ -1,36 +1,41 @@
 from __future__ import annotations
 
-import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
 
 from ..types import UNSET, Unset
 
+from ..types import UNSET, Unset
+from dateutil.parser import isoparse
+from typing import cast
+import datetime
+
 if TYPE_CHECKING:
-    from ..models.object_info_response_metadata_type_0 import (
-        ObjectInfoResponseMetadataType0,
-    )
+  from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
+
+
+
 
 
 T = TypeVar("T", bound="ObjectInfoResponse")
 
 
+
 @_attrs_define
 class ObjectInfoResponse:
-    """Response model for object metadata.
+    """ Response model for object metadata.
 
-    Attributes:
-        key (str):
-        size_bytes (int | None | Unset):
-        etag (None | str | Unset):
-        updated_at (datetime.datetime | None | Unset):
-        content_type (None | str | Unset):
-        metadata (None | ObjectInfoResponseMetadataType0 | Unset):
-    """
+        Attributes:
+            key (str):
+            size_bytes (int | None | Unset):
+            etag (None | str | Unset):
+            updated_at (datetime.datetime | None | Unset):
+            content_type (None | str | Unset):
+            metadata (None | ObjectInfoResponseMetadataType0 | Unset):
+     """
 
     key: str
     size_bytes: int | None | Unset = UNSET
@@ -40,11 +45,12 @@ class ObjectInfoResponse:
     metadata: None | ObjectInfoResponseMetadataType0 | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        from ..models.object_info_response_metadata_type_0 import (
-            ObjectInfoResponseMetadataType0,
-        )
 
+
+
+
+    def to_dict(self) -> dict[str, Any]:
+        from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
         key = self.key
 
         size_bytes: int | None | Unset
@@ -81,13 +87,12 @@ class ObjectInfoResponse:
         else:
             metadata = self.metadata
 
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update(
-            {
-                "key": key,
-            }
-        )
+        field_dict.update({
+            "key": key,
+        })
         if size_bytes is not UNSET:
             field_dict["size_bytes"] = size_bytes
         if etag is not UNSET:
@@ -101,12 +106,11 @@ class ObjectInfoResponse:
 
         return field_dict
 
+
+
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.object_info_response_metadata_type_0 import (
-            ObjectInfoResponseMetadataType0,
-        )
-
+        from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
         d = dict(src_dict)
         key = d.pop("key")
 
@@ -119,6 +123,7 @@ class ObjectInfoResponse:
 
         size_bytes = _parse_size_bytes(d.pop("size_bytes", UNSET))
 
+
         def _parse_etag(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -127,6 +132,7 @@ class ObjectInfoResponse:
             return cast(None | str | Unset, data)
 
         etag = _parse_etag(d.pop("etag", UNSET))
+
 
         def _parse_updated_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
@@ -138,12 +144,15 @@ class ObjectInfoResponse:
                     raise TypeError()
                 updated_at_type_0 = isoparse(data)
 
+
+
                 return updated_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
             return cast(datetime.datetime | None | Unset, data)
 
         updated_at = _parse_updated_at(d.pop("updated_at", UNSET))
+
 
         def _parse_content_type(data: object) -> None | str | Unset:
             if data is None:
@@ -154,9 +163,8 @@ class ObjectInfoResponse:
 
         content_type = _parse_content_type(d.pop("content_type", UNSET))
 
-        def _parse_metadata(
-            data: object,
-        ) -> None | ObjectInfoResponseMetadataType0 | Unset:
+
+        def _parse_metadata(data: object) -> None | ObjectInfoResponseMetadataType0 | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -166,12 +174,15 @@ class ObjectInfoResponse:
                     raise TypeError()
                 metadata_type_0 = ObjectInfoResponseMetadataType0.from_dict(data)
 
+
+
                 return metadata_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
             return cast(None | ObjectInfoResponseMetadataType0 | Unset, data)
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
+
 
         object_info_response = cls(
             key=key,
@@ -181,6 +192,7 @@ class ObjectInfoResponse:
             content_type=content_type,
             metadata=metadata,
         )
+
 
         object_info_response.additional_properties = d
         return object_info_response

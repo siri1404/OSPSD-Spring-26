@@ -14,16 +14,16 @@ from ..types import UNSET, Unset
 
 
 
-T = TypeVar("T", bound="ValidationErrorContext")
+T = TypeVar("T", bound="RootGetResponseRootGet")
 
 
 
 @_attrs_define
-class ValidationErrorContext:
+class RootGetResponseRootGet:
     """ 
      """
 
-    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+    additional_properties: dict[str, str] = _attrs_field(init=False, factory=dict)
 
 
 
@@ -41,21 +41,21 @@ class ValidationErrorContext:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        validation_error_context = cls(
+        root_get_response_root_get = cls(
         )
 
 
-        validation_error_context.additional_properties = d
-        return validation_error_context
+        root_get_response_root_get.additional_properties = d
+        return root_get_response_root_get
 
     @property
     def additional_keys(self) -> list[str]:
         return list(self.additional_properties.keys())
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> str:
         return self.additional_properties[key]
 
-    def __setitem__(self, key: str, value: Any) -> None:
+    def __setitem__(self, key: str, value: str) -> None:
         self.additional_properties[key] = value
 
     def __delitem__(self, key: str) -> None:

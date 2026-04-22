@@ -10,9 +10,9 @@ resolution-markers = [
 [manifest]
 members = [
     "ai-client-api",
+    "chat-client-wrapper",
     "cloud-storage-adapter",
     "cloud-storage-service",
-    "cloud-storage-service-api-client",
     "gcp-client-impl",
     "gemini-ai-client-impl",
     "ospsd-spring-26",
@@ -210,6 +210,22 @@ wheels = [
 ]
 
 [[package]]
+name = "chat-client-api"
+version = "0.1.0"
+source = { git = "https://github.com/HarshithKoriRaj/Shared-API.git#1036a6e9ac40f3b209cfc35abdd8cc9561965cc1" }
+
+[[package]]
+name = "chat-client-wrapper"
+version = "0.1.0"
+source = { editable = "components/chat_client_wrapper" }
+dependencies = [
+    { name = "chat-client-api" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "chat-client-api", git = "https://github.com/HarshithKoriRaj/Shared-API.git" }]
+
+[[package]]
 name = "click"
 version = "8.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -234,7 +250,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cloud-storage-api", git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git?tag=v1.0.0" },
-    { name = "cloud-storage-service-api-client", editable = "components/cloud_storage_service_api_client" },
+    { name = "cloud-storage-service-api-client", directory = "components/cloud_storage_service_api_client" },
     { name = "httpx", specifier = ">=0.26.0" },
 ]
 
@@ -249,6 +265,8 @@ version = "1.0.0"
 source = { editable = "components/cloud_storage_service" }
 dependencies = [
     { name = "ai-client-api" },
+    { name = "chat-client-api" },
+    { name = "chat-client-wrapper" },
     { name = "cloud-storage-api" },
     { name = "fastapi" },
     { name = "gcp-client-impl" },
@@ -272,6 +290,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ai-client-api", editable = "components/ai_client_api" },
+    { name = "chat-client-api", git = "https://github.com/HarshithKoriRaj/Shared-API.git" },
+    { name = "chat-client-wrapper", editable = "components/chat_client_wrapper" },
     { name = "cloud-storage-api", git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git?tag=v1.0.0" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "gcp-client-impl", editable = "components/gcp_client_impl" },
@@ -290,8 +310,8 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "cloud-storage-service-api-client"
-version = "1.0.0"
-source = { editable = "components/cloud_storage_service_api_client" }
+version = "0.1.0"
+source = { directory = "components/cloud_storage_service_api_client" }
 dependencies = [
     { name = "attrs" },
     { name = "httpx" },
@@ -300,9 +320,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "attrs", specifier = ">=22.2.0" },
-    { name = "httpx", specifier = ">=0.23.0,<0.29.0" },
-    { name = "python-dateutil", specifier = ">=2.8.0,<3.0.0" },
+    { name = "attrs", specifier = ">=23.1.0" },
+    { name = "httpx", specifier = ">=0.23.1" },
+    { name = "python-dateutil", specifier = ">=2.8.2" },
 ]
 
 [[package]]
@@ -1269,10 +1289,10 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "ai-client-api" },
+    { name = "chat-client-wrapper" },
     { name = "cloud-storage-adapter" },
     { name = "cloud-storage-api" },
     { name = "cloud-storage-service" },
-    { name = "cloud-storage-service-api-client" },
     { name = "gcp-client-impl" },
     { name = "gemini-ai-client-impl" },
     { name = "google-api-python-client-stubs" },
@@ -1295,10 +1315,10 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "ai-client-api", editable = "components/ai_client_api" },
+    { name = "chat-client-wrapper", editable = "components/chat_client_wrapper" },
     { name = "cloud-storage-adapter", editable = "components/cloud_storage_adapter" },
     { name = "cloud-storage-api", git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git?tag=v1.0.0" },
     { name = "cloud-storage-service", editable = "components/cloud_storage_service" },
-    { name = "cloud-storage-service-api-client", editable = "components/cloud_storage_service_api_client" },
     { name = "gcp-client-impl", editable = "components/gcp_client_impl" },
     { name = "gemini-ai-client-impl", editable = "components/gemini_ai_client_impl" },
     { name = "google-api-python-client-stubs", specifier = ">=1.30.0" },

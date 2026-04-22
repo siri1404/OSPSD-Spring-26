@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 from typing import Any, cast
 
-from ai_client_api import AiClientApi
+from ai_client_api import AiClientApi, AIResponse
 from cloud_storage_api import CloudStorageClient  # noqa: TC002
 from cloud_storage_api.exceptions import (
     AuthenticationError,
+    ContainerNotFoundError,
+    InvalidContainerError,
+    InvalidFileObjectError,
+    InvalidObjectNameError,
+    LocalFileAccessError,
     ObjectNotFoundError,
     StorageBackendError,
 )
@@ -50,7 +56,6 @@ class GeminiAiClient(AiClientApi):
 
         self._storage_client = storage_client
         self._model_name = model_name
-        self._context: dict[str, Any] | None = None
 
         # Get API key
         if api_key is None:
@@ -59,7 +64,7 @@ class GeminiAiClient(AiClientApi):
             msg = "GEMINI_API_KEY must be provided or set in environment variables."
             raise ValueError(msg)
 
-        self._genai_client = genai.Client(api_key=api_key, vertexai=True)
+        self._genai_client = genai.Client(api_key=api_key)
 
     def _extract_final_text(self, response: Any) -> str:  # noqa: ANN401
         """Extract final text response from Gemini response.
@@ -74,11 +79,11 @@ class GeminiAiClient(AiClientApi):
             return cast("str", response.text)
         return "No response generated."
 
-    def send_message(  # noqa: C901, PLR0912
+    def send_message(  # noqa: C901, PLR0912, PLR0915
         self,
         prompt: str,
         context: dict[str, Any] | None = None,
-    ) -> str:
+    ) -> AIResponse:
         """Send a prompt to Gemini and handle tool calling.
 
         Args:
@@ -86,7 +91,7 @@ class GeminiAiClient(AiClientApi):
             context: Optional context dict (e.g., {"container": "my-bucket"}).
 
         Returns:
-            Human-readable response string.
+            AIResponse containing text, action_taken, and tool_calls list.
 
         Raises:
             RuntimeError: If cloud storage operations fail.
@@ -95,7 +100,17 @@ class GeminiAiClient(AiClientApi):
             msg = "google-genai not available"
             raise ImportError(msg)
 
-        self._context = context
+        # Validate context schema (ensure non-empty container when provided)
+        if (
+            context
+            and "container" in context
+            and (
+                not isinstance(context["container"], str)
+                or not context["container"].strip()
+            )
+        ):
+            msg = "context['container'] must be a non-empty string"
+            raise ValueError(msg)
 
         config = genai_types.GenerateContentConfig(
             tools=get_tool_declarations(),
@@ -124,6 +139,11 @@ class GeminiAiClient(AiClientApi):
 
         response: Any = chat.send_message(prompt)
 
+        # Track tool calls and the last action taken and last tool args
+        last_action_taken: str | None = None
+        tool_calls: list[str] = []
+        last_tool_args: dict[str, Any] | None = None
+
         # Tool-calling loop (max 10 iterations)
         max_iterations = 10
         iteration = 0
@@ -139,6 +159,11 @@ class GeminiAiClient(AiClientApi):
                         tool_name = cast("str", part.function_call.name)
                         tool_args = dict(cast("dict[str, Any]", part.function_call.args))
 
+                        # Track this tool call and its args
+                        last_action_taken = tool_name
+                        tool_calls.append(tool_name)
+                        last_tool_args = dict(tool_args)
+
                         # Inject context container if not provided
                         if context and "container" in context and "container" not in tool_args:
                             tool_args["container"] = context["container"]
@@ -148,27 +173,33 @@ class GeminiAiClient(AiClientApi):
                             tool_result = dispatch_tool_call(tool_name, tool_args, self._storage_client)
                         except (
                             AuthenticationError,
+                            ContainerNotFoundError,
+                            InvalidContainerError,
+                            InvalidFileObjectError,
+                            InvalidObjectNameError,
+                            LocalFileAccessError,
                             ObjectNotFoundError,
                             StorageBackendError,
                         ) as exc:
                             msg = f"Storage operation failed: {exc}"
                             raise RuntimeError(msg) from exc
 
-                        # Handle PDF base64 content
+                        # Handle summarize_file specially (use function response parts)
                         if tool_name == "summarize_file":
-                            summarize_prompt = (
-                                "Summarize the following file in 5-7 bullet points. "
-                                "Return only the summary, with no extra commentary.\n\n"
-                                f"{tool_result}"
-                            )
-
                             if tool_result.startswith("PDF_CONTENT_BASE64:"):
                                 base64_content = tool_result[len("PDF_CONTENT_BASE64:") :]
-                                pdf_bytes = base64.b64decode(base64_content)
+                                try:
+                                    pdf_bytes = base64.b64decode(base64_content, validate=True)
+                                except (binascii.Error, ValueError) as exc:
+                                    msg = f"Invalid PDF base64 encoding from summarize_file: {exc}"
+                                    raise RuntimeError(msg) from exc
 
                                 response = chat.send_message(
                                     [
-                                        summarize_prompt,
+                                        genai_types.Part.from_function_response(
+                                            name=tool_name,
+                                            response={"result": "PDF received"},
+                                        ),
                                         genai_types.Part.from_bytes(
                                             data=pdf_bytes,
                                             mime_type="application/pdf",
@@ -176,10 +207,20 @@ class GeminiAiClient(AiClientApi):
                                     ]
                                 )
                             else:
-                                response = chat.send_message(summarize_prompt)
+                                # For text-based summaries, present the tool result as a function response
+                                response = chat.send_message(
+                                    genai_types.Part.from_function_response(
+                                        name=tool_name,
+                                        response={"result": tool_result},
+                                    )
+                                )
                         elif tool_result.startswith("PDF_CONTENT_BASE64:"):
                             base64_content = tool_result[len("PDF_CONTENT_BASE64:") :]
-                            pdf_bytes = base64.b64decode(base64_content)
+                            try:
+                                pdf_bytes = base64.b64decode(base64_content, validate=True)
+                            except (binascii.Error, ValueError) as exc:
+                                msg = f"Invalid PDF base64 encoding from tool result: {exc}"
+                                raise RuntimeError(msg) from exc
 
                             response = chat.send_message(
                                 [
@@ -208,6 +249,17 @@ class GeminiAiClient(AiClientApi):
 
         # Check if we hit max iterations
         if iteration >= max_iterations:
-            return "Could not complete the request after maximum tool call iterations."
+            return AIResponse(
+                text="Could not complete the request after maximum tool call iterations.",
+                action_taken=last_action_taken,
+                tool_calls=tool_calls,
+                tool_args=last_tool_args,
+            )
 
-        return self._extract_final_text(response)
+        final_text = self._extract_final_text(response)
+        return AIResponse(
+            text=final_text,
+            action_taken=last_action_taken,
+            tool_calls=tool_calls,
+            tool_args=last_tool_args,
+        )

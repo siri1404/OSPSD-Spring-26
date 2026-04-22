@@ -6,6 +6,7 @@ import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ai_client_api import AIResponse
 from cloud_storage_api.exceptions import (
     AuthenticationError,
     ObjectNotFoundError,
@@ -22,7 +23,7 @@ def mock_storage_client() -> MagicMock:
 
 @pytest.mark.unit
 def test_send_message_returns_text_when_no_tool_call(mock_storage_client: MagicMock) -> None:
-    """Test send_message returns plain text when no tool calls."""
+    """Test send_message returns AIResponse with text when no tool calls."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         # Mock response with no function calls
         mock_response = MagicMock()
@@ -39,12 +40,15 @@ def test_send_message_returns_text_when_no_tool_call(mock_storage_client: MagicM
         client = GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
         result = client.send_message("list my files")
 
-        assert result == "Here are your files."
+        assert isinstance(result, AIResponse)
+        assert result.text == "Here are your files."
+        assert result.action_taken is None
+        assert result.tool_calls == []
 
 
 @pytest.mark.unit
 def test_send_message_executes_list_files_tool_call(mock_storage_client: MagicMock) -> None:
-    """Test send_message executes list_files tool call."""
+    """Test send_message executes list_files tool call and tracks it."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         # Mock first response with function call
         mock_function_call = MagicMock()
@@ -76,7 +80,10 @@ def test_send_message_executes_list_files_tool_call(mock_storage_client: MagicMo
             client = GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
             result = client.send_message("list my files")
 
-        assert "Found 3 files" in result
+        assert isinstance(result, AIResponse)
+        assert "Found 3 files" in result.text
+        assert result.action_taken == "list_files"
+        assert "list_files" in result.tool_calls
 
 
 @pytest.mark.unit
@@ -120,7 +127,7 @@ def test_send_message_injects_context_container(mock_storage_client: MagicMock) 
 
 @pytest.mark.unit
 def test_send_message_caps_at_max_iterations(mock_storage_client: MagicMock) -> None:
-    """Test send_message caps at max iterations."""
+    """Test send_message caps at max iterations and returns AIResponse."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         # Always return function calls
         mock_function_call = MagicMock()
@@ -148,7 +155,9 @@ def test_send_message_caps_at_max_iterations(mock_storage_client: MagicMock) -> 
             client = GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
             result = client.send_message("test")
 
-        assert "maximum tool call iterations" in result
+        assert isinstance(result, AIResponse)
+        assert "maximum tool call iterations" in result.text
+        assert result.action_taken == "list_files"  # Last action before hitting max
 
 
 @pytest.mark.unit
@@ -207,7 +216,7 @@ def test_raises_value_error_when_api_key_missing(
 
 @pytest.mark.unit
 def test_send_message_summarize_pdf_sends_document_part(mock_storage_client: MagicMock) -> None:
-    """Test send_message sends PDF content as document part."""
+    """Test send_message sends PDF content as document part and tracks action."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         pdf_content = b"%PDF-1.4 test"
         base64_encoded = base64.b64encode(pdf_content).decode("utf-8")
@@ -242,7 +251,9 @@ def test_send_message_summarize_pdf_sends_document_part(mock_storage_client: Mag
             client = GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
             result = client.send_message("summarize doc.pdf")
 
-        assert "PDF analyzed" in result
+        assert isinstance(result, AIResponse)
+        assert "PDF analyzed" in result.text
+        assert result.action_taken == "summarize_file"
         second_call_args = mock_chat.send_message.call_args_list[1].args[0]
         assert isinstance(second_call_args, list)
         assert len(second_call_args) == 2
@@ -250,7 +261,7 @@ def test_send_message_summarize_pdf_sends_document_part(mock_storage_client: Mag
 
 @pytest.mark.unit
 def test_send_message_executes_delete_file_tool_call(mock_storage_client: MagicMock) -> None:
-    """Test send_message executes delete_file tool call."""
+    """Test send_message executes delete_file tool call and tracks it."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         mock_function_call = MagicMock()
         mock_function_call.name = "delete_file"
@@ -281,12 +292,15 @@ def test_send_message_executes_delete_file_tool_call(mock_storage_client: MagicM
             client = GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
             result = client.send_message("delete file.txt")
 
-        assert "deleted successfully" in result.lower()
+        assert isinstance(result, AIResponse)
+        assert "deleted successfully" in result.text.lower()
+        assert result.action_taken == "delete_file"
+        assert "delete_file" in result.tool_calls
 
 
 @pytest.mark.unit
 def test_send_message_executes_summarize_file_tool_call(mock_storage_client: MagicMock) -> None:
-    """Test send_message executes summarize_file tool call."""
+    """Test send_message executes summarize_file tool call and tracks it."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         mock_function_call = MagicMock()
         mock_function_call.name = "summarize_file"
@@ -317,4 +331,7 @@ def test_send_message_executes_summarize_file_tool_call(mock_storage_client: Mag
             client = GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
             result = client.send_message("what does this project do")
 
-        assert "does X and Y" in result
+        assert isinstance(result, AIResponse)
+        assert "does X and Y" in result.text
+        assert result.action_taken == "summarize_file"
+        assert "summarize_file" in result.tool_calls

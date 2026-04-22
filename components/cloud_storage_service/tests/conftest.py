@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from ai_client_api import AIResponse
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
@@ -138,10 +139,14 @@ def mock_ai_client() -> MagicMock:
     """Mock AiClientApi for testing.
 
     Returns:
-        Mocked AiClientApi instance.
+        Mocked AiClientApi instance that returns AIResponse.
     """
     mock = MagicMock()
-    mock.send_message.return_value = "AI response"
+    mock.send_message.return_value = AIResponse(
+        text="AI response",
+        action_taken="list_files",
+        tool_calls=["list_files"],
+    )
     return mock
 
 
@@ -163,3 +168,51 @@ def mock_get_ai_client(mock_ai_client: MagicMock) -> Generator[MagicMock, None, 
     app.dependency_overrides[main.get_ai_client] = _override
     yield mock_ai_client
     del app.dependency_overrides[main.get_ai_client]
+
+
+@pytest.fixture
+def mock_chat_client() -> MagicMock:
+    """Mock ChatClient from shared chat-client-api for testing.
+
+    Returns:
+        Mocked ChatClient instance that returns Message objects.
+    """
+    from chat_client_api import Message
+
+    mock = MagicMock()
+    # Mock send_message to return a Message dataclass
+    mock.send_message.return_value = Message(
+        message_id="msg_123",
+        channel="general",
+        text="Test notification",
+        sender="cloud-storage-service",
+        timestamp=datetime.now(),
+    )
+    return mock
+
+
+@pytest.fixture
+def mock_get_chat_notification(mock_chat_client: MagicMock) -> Generator[MagicMock, None, None]:
+    """Override get_chat_notification dependency with mock.
+
+    Args:
+        mock_chat_client: Mocked ChatClient instance.
+
+    Yields:
+        Mocked ChatClient instance.
+    """
+    from chat_client_wrapper import ChatNotificationWrapper
+    from cloud_storage_service import main
+
+    def _override() -> ChatNotificationWrapper | None:
+        try:
+            return ChatNotificationWrapper(
+                chat_client=mock_chat_client,
+                channel_id="general",
+            )
+        except Exception:
+            return None
+
+    app.dependency_overrides[main.get_chat_notification] = _override
+    yield mock_chat_client
+    del app.dependency_overrides[main.get_chat_notification]
