@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Apply hand-edits to generated client code.
 
 This script re-applies critical hand-edits to the cloud_storage_service_api_client
@@ -18,8 +17,12 @@ Exit codes:
     1 - At least one patch failed to apply
 """
 
+import logging
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 def check_and_patch(
@@ -43,30 +46,34 @@ def check_and_patch(
         True if patch applied or already in place, False if patch failed.
     """
     if not file_path.exists():
-        print(f"❌ {patch_name}: File not found: {file_path}")
+        logger.warning("❌ %s: File not found: %s", patch_name, file_path)
         return False
 
     content = file_path.read_text()
 
     # Determine what "already patched" looks like
-    if check_already_patched is None:
-        already_patched = new_fragment in content
-    else:
-        already_patched = check_already_patched in content
+    already_patched = (
+        new_fragment in content
+        if check_already_patched is None
+        else check_already_patched in content
+    )
 
     if already_patched:
-        print(f"✅ {patch_name}: Already patched")
+        logger.info("✅ %s: Already patched", patch_name)
         return True
 
     if old_marker not in content:
-        print(f"❌ {patch_name}: Could not find marker in file")
-        print(f"   Expected substring not found. Generator output may have changed.")
+        logger.warning("❌ %s: Could not find marker in file", patch_name)
+        logger.warning(
+            "   Expected substring not found. Generator output may have changed."
+        )
         return False
 
     new_content = content.replace(old_marker, new_fragment)
     file_path.write_text(new_content)
-    print(f"✅ {patch_name}: Patch applied successfully")
+    logger.info("✅ %s: Patch applied successfully", patch_name)
     return True
+
 
 def patch_body_upload_file_upload_post() -> bool:
     """Patch to_multipart() to handle bytes payloads and extract filename from key."""
@@ -76,7 +83,7 @@ def patch_body_upload_file_upload_post() -> bool:
         / "cloud_storage_service_api_client/models/body_upload_file_upload_post.py"
     )
 
-    old_method = '''    def to_multipart(self) -> types.RequestFiles:
+    old_method = """    def to_multipart(self) -> types.RequestFiles:
         files: types.RequestFiles = []
 
         files.append(("file", (None, str(self.file).encode(), "text/plain")))
@@ -101,9 +108,9 @@ def patch_body_upload_file_upload_post() -> bool:
 
 
 
-        return files'''
+        return files"""
 
-    new_method = '''    def to_multipart(self) -> types.RequestFiles:
+    new_method = """    def to_multipart(self) -> types.RequestFiles:
         files: types.RequestFiles = []
 
         # FastAPI's UploadFile dependency requires an explicit filename for proper parsing
@@ -135,7 +142,7 @@ def patch_body_upload_file_upload_post() -> bool:
         for prop_name, prop in self.additional_properties.items():
             files.append((prop_name, (None, str(prop).encode(), "text/plain")))
 
-        return files'''
+        return files"""
 
     return check_and_patch(
         file_path,
@@ -151,18 +158,29 @@ def patch_download_file_download_key_get() -> bool:
     file_path = (
         Path(__file__).parent.parent
         / "components/cloud_storage_service_api_client"
-        / "cloud_storage_service_api_client/api/storage/download_file_download_key_get.py"
+        / "cloud_storage_service_api_client/api/storage"
+        / "download_file_download_key_get.py"
     )
 
-    old_parse = '''def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Any | HTTPValidationError | None:
-    if response.status_code == 200:
-        response_200 = response.json()
-        return response_200'''
+    old_parse = (
+        "def _parse_response("
+        "*, client: AuthenticatedClient | Client, "
+        "response: httpx.Response"
+        ") -> Any | HTTPValidationError | None:\n"
+        "    if response.status_code == 200:\n"
+        "        response_200 = response.json()\n"
+        "        return response_200"
+    )
 
-    new_parse = '''def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Any | HTTPValidationError | None:
-    if response.status_code == 200:
-        # Download endpoint returns bytes, so surface the raw payload.
-        return response.content'''
+    new_parse = (
+        "def _parse_response("
+        "*, client: AuthenticatedClient | Client, "
+        "response: httpx.Response"
+        ") -> Any | HTTPValidationError | None:\n"
+        "    if response.status_code == 200:\n"
+        "        # Download endpoint returns bytes, surface raw payload.\n"
+        "        return response.content"
+    )
 
     return check_and_patch(
         file_path,
@@ -178,16 +196,21 @@ def patch_ai_chat_ai_chat_post() -> bool:
     file_path = (
         Path(__file__).parent.parent
         / "components/cloud_storage_service_api_client"
-        / "cloud_storage_service_api_client/api/ai/ai_chat_ai_chat_post.py"
+        / "cloud_storage_service_api_client/api/ai"
+        / "ai_chat_ai_chat_post.py"
     )
 
-    old_guard = '''    headers: dict[str, Any] = {}
-    if not isinstance(x_container, Unset):
-        headers["X-Container"] = x_container'''
+    old_guard = (
+        "    headers: dict[str, Any] = {}\n"
+        "    if not isinstance(x_container, Unset):\n"
+        '        headers["X-Container"] = x_container'
+    )
 
-    new_guard = '''    headers: dict[str, Any] = {}
-    if not isinstance(x_container, Unset) and x_container is not None:
-        headers["X-Container"] = x_container'''
+    new_guard = (
+        "    headers: dict[str, Any] = {}\n"
+        "    if not isinstance(x_container, Unset) and x_container is not None:\n"
+        '        headers["X-Container"] = x_container'
+    )
 
     return check_and_patch(
         file_path,
@@ -200,7 +223,7 @@ def patch_ai_chat_ai_chat_post() -> bool:
 
 def main() -> int:
     """Apply all patches. Return 0 on success, 1 on failure."""
-    print("🔧 Applying generator patches to cloud_storage_service_api_client...\n")
+    logger.info("🔧 Applying generator patches to cloud_storage_service_api_client...\n")
 
     results = [
         patch_body_upload_file_upload_post(),
@@ -208,13 +231,12 @@ def main() -> int:
         patch_ai_chat_ai_chat_post(),
     ]
 
-    print()
+    logger.info("")
     if all(results):
-        print("✅ All generator patches applied successfully")
+        logger.info("✅ All generator patches applied successfully")
         return 0
-    else:
-        print("❌ One or more patches failed")
-        return 1
+    logger.warning("❌ One or more patches failed")
+    return 1
 
 
 if __name__ == "__main__":
