@@ -52,11 +52,7 @@ def check_and_patch(
     content = file_path.read_text()
 
     # Determine what "already patched" looks like
-    already_patched = (
-        new_fragment in content
-        if check_already_patched is None
-        else check_already_patched in content
-    )
+    already_patched = new_fragment in content if check_already_patched is None else check_already_patched in content
 
     if already_patched:
         logger.info("✅ %s: Already patched", patch_name)
@@ -64,9 +60,7 @@ def check_and_patch(
 
     if old_marker not in content:
         logger.warning("❌ %s: Could not find marker in file", patch_name)
-        logger.warning(
-            "   Expected substring not found. Generator output may have changed."
-        )
+        logger.warning("   Expected substring not found. Generator output may have changed.")
         return False
 
     new_content = content.replace(old_marker, new_fragment)

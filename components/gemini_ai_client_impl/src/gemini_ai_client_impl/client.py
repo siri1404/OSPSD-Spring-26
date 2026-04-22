@@ -101,14 +101,7 @@ class GeminiAiClient(AiClientApi):
             raise ImportError(msg)
 
         # Validate context schema (ensure non-empty container when provided)
-        if (
-            context
-            and "container" in context
-            and (
-                not isinstance(context["container"], str)
-                or not context["container"].strip()
-            )
-        ):
+        if context and "container" in context and (not isinstance(context["container"], str) or not context["container"].strip()):
             msg = "context['container'] must be a non-empty string"
             raise ValueError(msg)
 
