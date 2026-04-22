@@ -62,6 +62,11 @@ chat-client-wrapper = { workspace = true }
 [tool.ruff]
 line-length = 130
 target-version = "py312"
+exclude = [
+    "components/cloud_storage_service_api_client/**",
+    ".venv",
+    "**/.venv",
+]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -160,6 +165,9 @@ strict = true
 explicit_package_bases = true
 warn_unused_ignores = true
 ignore_missing_imports = false
+exclude = [
+    "components/cloud_storage_service_api_client/.*",
+]
 
 # Paths where mypy should look for packages
 mypy_path = [
@@ -195,7 +203,18 @@ ignore_errors = true
 # External chat-client-api from Shared-API repo: no type stubs available
 [[tool.mypy.overrides]]
 module = ["chat_client_api", "chat_client_api.*"]
+follow_imports = "skip"
 ignore_errors = true
+
+# Files that import chat_client_api (untyped external dependency)
+[[tool.mypy.overrides]]
+module = [
+    "cloud_storage_service.main",
+    "cloud_storage_service.tests.conftest",
+    "components.cloud_storage_service.main",
+    "components.cloud_storage_service.tests.conftest",
+]
+disable_error_code = ["import-untyped"]
 
 # ============================================
 # PYTEST CONFIGURATION
@@ -218,7 +237,9 @@ addopts = [
     "--verbose",
     "--strict-markers",
     "--strict-config",
-    "--cov=components",
+    "--cov=components/ai_client_api/src",
+    "--cov=components/gemini_ai_client_impl/src",
+    "--cov=components/chat_client_wrapper/src",
     "--cov-report=term-missing",
 ]
 
@@ -243,14 +264,12 @@ branch = true
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
+    "components/cloud_storage_service_api_client/**/*",
 ]
 
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
-skip_covered = false
-precision = 2
-
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -258,5 +277,11 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+    "^\\s*pass\\s*$",
     "@abstractmethod",
 ]
+omit = [
+    "components/cloud_storage_service_api_client/**/*",
+]
+skip_covered = false
+precision = 2

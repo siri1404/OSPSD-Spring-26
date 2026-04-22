@@ -217,7 +217,6 @@ def test_ai_chat_triggers_notification_with_object_name(
     mock_get_ai_client: MagicMock,
 ) -> None:
     """Test that /ai/chat includes object_name in notification when tool_args provided."""
-    from ai_client_api import AIResponse
     from cloud_storage_service import main
 
     # Arrange: mock AI response with populated tool_args
