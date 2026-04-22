@@ -248,3 +248,25 @@ def test_ai_chat_triggers_notification_with_object_name(
         assert "report.pdf" in msg  # Proves tool_args.object_name flowed through
     finally:
         del main.app.dependency_overrides[main.get_chat_notification]
+
+
+@pytest.mark.unit
+def test_ai_chat_notification_failure_does_not_fail_request(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
+    mock_get_ai_client: MagicMock,
+) -> None:
+    """Test that if chat notification fails, /ai/chat still returns 200."""
+    from cloud_storage_service import main
+
+    mock_notifier = MagicMock()
+    mock_notifier.notify.side_effect = RuntimeError("chat down")
+    main.app.dependency_overrides[main.get_chat_notification] = lambda: mock_notifier
+    try:
+        response = client.post(
+            "/ai/chat", json={"prompt": "hello"}, headers=auth_headers
+        )
+        assert response.status_code == 200
+    finally:
+        del main.app.dependency_overrides[main.get_chat_notification]
