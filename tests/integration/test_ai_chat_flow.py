@@ -1,9 +1,16 @@
-"""Integration tests for AI + Chat notification flows.
+"""Integration tests for /ai/chat endpoint with service layer mocking.
 
-These tests verify:
-1. AI tool invocation through the real Gemini client
-2. Chat notifications are triggered with correct content
-3. End-to-end flow from /ai/chat to storage to notifications
+These tests verify the /ai/chat service endpoint functionality with mocked external dependencies:
+- Gemini AI client is MOCKED (not using real API)
+- Storage client is MOCKED (not using real GCS)
+- Chat client is MOCKED (not sending real notifications)
+
+Tests verify:
+1. Service accepts AI prompts via /ai/chat endpoint
+2. Mocked AI client processes requests and returns tool calls
+3. Mocked chat notifications are triggered on AI actions
+
+For true integration with REAL Gemini API, see tests/e2e/ with RUN_E2E_TESTS=true.
 """
 
 from __future__ import annotations
@@ -256,6 +263,4 @@ def test_end_to_end_ai_storage_chat_flow(
     assert len(data["response"]) > 0, "response must not be empty"
 
     # Verify action_taken is either a string or None
-    assert data["action_taken"] is None or isinstance(
-        data["action_taken"], str
-    ), "action_taken must be string or None"
+    assert data["action_taken"] is None or isinstance(data["action_taken"], str), "action_taken must be string or None"

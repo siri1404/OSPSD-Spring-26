@@ -1,10 +1,16 @@
-"""Integration tests for AI + Storage flows.
+"""Integration tests for /ai/chat endpoint with service layer mocking.
 
-These tests verify the actual Gemini AI client tool loop by:
-1. Mocking genai.Client responses with tool_call and text_response sequences
-2. Using real GeminiAiClient (not mocked AiClientApi)
-3. Verifying tool dispatch to actual storage client methods
-4. Asserting end-to-end integration between /ai/chat and storage operations
+These tests verify the /ai/chat service endpoint functionality with mocked external dependencies:
+- Gemini API responses are MOCKED (not using real Gemini API)
+- Storage client is MOCKED (not using real GCS bucket)
+
+Tests verify:
+1. /ai/chat endpoint accepts AI prompts
+2. Mocked Gemini responses with tool calls are properly dispatched
+3. Mocked storage operations are called with correct parameters
+4. Service correctly routes requests through dependency injection
+
+For true integration with REAL Gemini API and GCS, see tests/e2e/ with RUN_E2E_TESTS=true.
 """
 
 from __future__ import annotations

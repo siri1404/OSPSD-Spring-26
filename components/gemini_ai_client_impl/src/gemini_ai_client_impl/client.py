@@ -64,7 +64,7 @@ class GeminiAiClient(AiClientApi):
             msg = "GEMINI_API_KEY must be provided or set in environment variables."
             raise ValueError(msg)
 
-        self._genai_client = genai.Client(api_key=api_key)
+        self._genai_client = genai.Client(api_key=api_key, vertexai=True)
 
     def _extract_final_text(self, response: Any) -> str:  # noqa: ANN401
         """Extract final text response from Gemini response.

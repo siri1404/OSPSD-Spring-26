@@ -49,7 +49,7 @@ def test_e2e_upload_query_ai_list_workflow() -> None:
     headers = {"Authorization": f"Bearer {STAGING_TOKEN}"}
 
     with httpx.Client(
-        base_url=STAGING_URL,
+        base_url=str(STAGING_URL),
         headers=headers,
         timeout=30.0,
     ) as client:
@@ -97,7 +97,7 @@ def test_e2e_upload_delete_verify_workflow() -> None:
     headers = {"Authorization": f"Bearer {STAGING_TOKEN}"}
 
     with httpx.Client(
-        base_url=STAGING_URL,
+        base_url=str(STAGING_URL),
         headers=headers,
         timeout=30.0,
     ) as client:
@@ -144,7 +144,7 @@ def test_e2e_ai_get_file_info_workflow() -> None:
     headers = {"Authorization": f"Bearer {STAGING_TOKEN}"}
 
     with httpx.Client(
-        base_url=STAGING_URL,
+        base_url=str(STAGING_URL),
         headers=headers,
         timeout=30.0,
     ) as client:
@@ -160,9 +160,7 @@ def test_e2e_ai_get_file_info_workflow() -> None:
         # Step 2: Ask AI for file information
         info_response = client.post(
             "/ai/chat",
-            json={
-                "prompt": "what is the size and content type of e2e/info_test.txt"
-            },
+            json={"prompt": "what is the size and content type of e2e/info_test.txt"},
             headers={**headers, "X-Container": E2E_TEST_BUCKET},
         )
         assert info_response.status_code == 200
@@ -191,7 +189,7 @@ def test_e2e_multiple_ai_operations_sequential() -> None:
     headers = {"Authorization": f"Bearer {STAGING_TOKEN}"}
 
     with httpx.Client(
-        base_url=STAGING_URL,
+        base_url=str(STAGING_URL),
         headers=headers,
         timeout=30.0,
     ) as client:
@@ -227,7 +225,7 @@ def test_e2e_auth_required() -> None:
     import httpx
 
     with httpx.Client(
-        base_url=STAGING_URL,
+        base_url=str(STAGING_URL),
         timeout=30.0,
     ) as client:
         # Request without Authorization header
@@ -251,7 +249,7 @@ def test_e2e_health_check() -> None:
     import httpx
 
     with httpx.Client(
-        base_url=STAGING_URL,
+        base_url=str(STAGING_URL),
         timeout=30.0,
     ) as client:
         response = client.get("/health")

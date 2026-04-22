@@ -86,10 +86,7 @@ class MockChatClientApi:
         Returns:
             True if found, False otherwise.
         """
-        return any(
-            text_fragment.lower() in message_text.lower()
-            for message_text, _ in self.call_history
-        )
+        return any(text_fragment.lower() in message_text.lower() for message_text, _ in self.call_history)
 
     def reset(self) -> None:
         """Reset mock to initial state."""

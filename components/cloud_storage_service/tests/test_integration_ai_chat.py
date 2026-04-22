@@ -91,9 +91,7 @@ def test_ai_chat_sends_notification_after_delete_via_direct_delete(
     assert response.status_code == 204
 
     # Verify storage client was called
-    mock_storage_client.delete_file.assert_called_once_with(
-        container="test-bucket", object_name="uploads/old_file.txt"
-    )
+    mock_storage_client.delete_file.assert_called_once_with(container="test-bucket", object_name="uploads/old_file.txt")
 
 
 @pytest.mark.unit
@@ -187,9 +185,7 @@ def test_multiple_sequential_ai_actions(
     mock_ai_client.send_message.side_effect = [first_response, second_response]
 
     # Act: Send two sequential prompts
-    response1 = client.post(
-        "/ai/chat", json={"prompt": "list files"}, headers=auth_headers
-    )
+    response1 = client.post("/ai/chat", json={"prompt": "list files"}, headers=auth_headers)
     response2 = client.post(
         "/ai/chat",
         json={"prompt": "delete archive.tar"},
@@ -297,9 +293,7 @@ def test_ai_chat_preserves_notification_context_on_error(
     # Arrange: Mock storage error but AI still completes
     from cloud_storage_api.exceptions import StorageBackendError
 
-    mock_storage_client.delete_file.side_effect = StorageBackendError(
-        "Backend error"
-    )
+    mock_storage_client.delete_file.side_effect = StorageBackendError("Backend error")
 
     mock_ai_client.send_message.return_value = AIResponse(
         text="I attempted to delete the file but encountered a backend error",

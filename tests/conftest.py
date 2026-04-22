@@ -11,7 +11,7 @@ from collections.abc import Generator
 import pytest
 
 # Import all fixtures from the cloud_storage_service component conftest
-from components.cloud_storage_service.tests.conftest import (  # noqa: F401
+from components.cloud_storage_service.tests.conftest import (  # type: ignore[attr-defined]
     app,
     async_client,
     auth_headers,
@@ -44,7 +44,7 @@ __all__ = [
 def _apply_mocks(
     mock_get_ai_client: object,
     mock_get_chat_notification: object,
-) -> Generator[None, None, None]:
+) -> None:
     """Automatically apply AI and chat mocks to all tests in tests/ directory.
 
     This ensures dependency overrides are active for every test.
@@ -52,8 +52,4 @@ def _apply_mocks(
     Args:
         mock_get_ai_client: Mocked AI client fixture.
         mock_get_chat_notification: Mocked chat notification fixture.
-
-    Yields:
-        None - dependency overrides remain active during test.
     """
-    yield
