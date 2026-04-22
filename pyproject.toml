@@ -237,9 +237,9 @@ addopts = [
     "--verbose",
     "--strict-markers",
     "--strict-config",
-    "--cov=components/ai_client_api/src",
-    "--cov=components/gemini_ai_client_impl/src",
-    "--cov=components/chat_client_wrapper/src",
+    "--cov=components/ai_client_api/src/",
+    "--cov=components/gemini_ai_client_impl/src/",
+    "--cov=components/chat_client_wrapper/src/",
     "--cov-report=term-missing",
 ]
 
