@@ -48,13 +48,8 @@ def _map_provider_error(  # noqa: C901, PLR0912
     mapped: Exception
 
     if isinstance(exc, google_exceptions.Forbidden):
-        # 403 Forbidden: Treat as ObjectNotFoundError when checking object existence,
-        # since the end result is the same - the caller cannot access the object.
-        # Otherwise treat as AuthenticationError for actual permission issues.
         if treat_not_found_as_container:
             mapped = ContainerNotFoundError(f"Container '{container}' not found or access denied")
-        elif object_name is not None:
-            mapped = ObjectNotFoundError(f"Object '{object_name}' not found in bucket '{container}' or access denied")
         else:
             mapped = AuthenticationError("Access denied by cloud provider.")
     elif isinstance(exc, google_exceptions.Unauthorized):
@@ -255,7 +250,7 @@ class GCPCloudStorageClient(CloudStorageClient):
             raise _map_provider_error(
                 exc,
                 container=container,
-                object_name=remote_path,
+                object_name=None,
                 treat_not_found_as_container=False,
             ) from exc
 
