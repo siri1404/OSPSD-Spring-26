@@ -6,7 +6,7 @@ import os
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from chat_client_api import ChatClient  # type: ignore[import-untyped]
+    from chat_client_api import ChatClient
 
 
 class ChatNotificationWrapper:

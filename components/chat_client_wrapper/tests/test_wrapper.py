@@ -6,7 +6,7 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
-from chat_client_api import Message  # type: ignore[import-untyped]
+from chat_client_api import Message
 from chat_client_wrapper import ChatNotificationWrapper
 from chat_client_wrapper.notifications import NotificationMessages
 

@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import tempfile
 from datetime import datetime
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
-from typing import Annotated, Any
-import logging
-from functools import lru_cache
+from typing import TYPE_CHECKING, Annotated, Any
 
 import anyio
 from ai_client_api import AiClientApi
-from chat_client_api import ChatClient, get_client
+
+if TYPE_CHECKING:
+    from chat_client_api import ChatClient
 from chat_client_wrapper import ChatNotificationWrapper
 from chat_client_wrapper.notifications import NotificationMessages
 from cloud_storage_api import CloudStorageClient
@@ -119,11 +121,12 @@ logger = logging.getLogger(__name__)
 
 @lru_cache(maxsize=1)
 def _get_cached_chat_client() -> ChatClient | None:
-    """Return a cached ChatClient instance from the shared API, or None on failure."""
     try:
-        return get_client()
-    except Exception:
-        logger.exception("Error initializing chat client")
+        from cloud_storage_service.slack_adapter import SlackChatClient
+
+        return SlackChatClient()
+    except ValueError as exc:
+        logger.warning("Could not initialize Slack chat client: %s", exc)
         return None
 
 
@@ -615,7 +618,7 @@ async def ai_chat(
             object_name = last_tool_args.get("object_name") or last_tool_args.get("remote_path") or None
 
             # Truncate result for notifications safely
-            result_text = ai_response.text if len(ai_response.text) <= 100 else ai_response.text[:100] + "..."
+            result_text = ai_response.text if len(ai_response.text) <= 5000 else ai_response.text[:100] + "..."
 
             msg = NotificationMessages.ai_action_performed(
                 action=ai_response.action_taken or "request_processed",

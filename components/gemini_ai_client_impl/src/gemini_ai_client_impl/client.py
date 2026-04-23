@@ -64,7 +64,7 @@ class GeminiAiClient(AiClientApi):
             msg = "GEMINI_API_KEY must be provided or set in environment variables."
             raise ValueError(msg)
 
-        self._genai_client = genai.Client(api_key=api_key)
+        self._genai_client = genai.Client(api_key=api_key, vertexai=True)
 
     def _extract_final_text(self, response: Any) -> str:  # noqa: ANN401
         """Extract final text response from Gemini response.
@@ -101,14 +101,7 @@ class GeminiAiClient(AiClientApi):
             raise ImportError(msg)
 
         # Validate context schema (ensure non-empty container when provided)
-        if (
-            context
-            and "container" in context
-            and (
-                not isinstance(context["container"], str)
-                or not context["container"].strip()
-            )
-        ):
+        if context and "container" in context and (not isinstance(context["container"], str) or not context["container"].strip()):
             msg = "context['container'] must be a non-empty string"
             raise ValueError(msg)
 
@@ -152,6 +145,7 @@ class GeminiAiClient(AiClientApi):
 
             if response.candidates:
                 has_function_call = False
+                function_response_parts: list[Any] = []
 
                 for part in response.candidates[0].content.parts:
                     if hasattr(part, "function_call") and part.function_call:
@@ -194,7 +188,7 @@ class GeminiAiClient(AiClientApi):
                                     msg = f"Invalid PDF base64 encoding from summarize_file: {exc}"
                                     raise RuntimeError(msg) from exc
 
-                                response = chat.send_message(
+                                function_response_parts.extend(
                                     [
                                         genai_types.Part.from_function_response(
                                             name=tool_name,
@@ -208,7 +202,7 @@ class GeminiAiClient(AiClientApi):
                                 )
                             else:
                                 # For text-based summaries, present the tool result as a function response
-                                response = chat.send_message(
+                                function_response_parts.append(
                                     genai_types.Part.from_function_response(
                                         name=tool_name,
                                         response={"result": tool_result},
@@ -222,7 +216,7 @@ class GeminiAiClient(AiClientApi):
                                 msg = f"Invalid PDF base64 encoding from tool result: {exc}"
                                 raise RuntimeError(msg) from exc
 
-                            response = chat.send_message(
+                            function_response_parts.extend(
                                 [
                                     genai_types.Part.from_function_response(
                                         name=tool_name,
@@ -235,12 +229,15 @@ class GeminiAiClient(AiClientApi):
                                 ]
                             )
                         else:
-                            response = chat.send_message(
+                            function_response_parts.append(
                                 genai_types.Part.from_function_response(
                                     name=tool_name,
                                     response={"result": tool_result},
                                 )
                             )
+
+                if function_response_parts:
+                    response = chat.send_message(function_response_parts)
 
                 if not has_function_call:
                     break

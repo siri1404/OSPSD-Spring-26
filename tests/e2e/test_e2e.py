@@ -136,8 +136,8 @@ def service_runtime() -> Iterator[dict[str, str]]:
 
     env.setdefault("GOOGLE_OAUTH_CLIENT_ID", "test-client-id")
     env.setdefault("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret")
-    env.setdefault("GOOGLE_OAUTH_REDIRECT_URI", f"{base_url}/auth/callback")
-    env.setdefault("ENVIRONMENT", "test")
+    env["GOOGLE_OAUTH_REDIRECT_URI"] = f"{base_url}/auth/callback"
+    env["ENVIRONMENT"] = "test"
     env["DEV_AUTH_TOKEN"] = dev_token
     env["DEV_ACCESS_TOKEN"] = dev_token
     env.setdefault("CLOUD_STORAGE_SERVICE_URL", base_url)
