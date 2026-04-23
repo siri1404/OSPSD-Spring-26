@@ -34,7 +34,7 @@ except ImportError:  # pragma: no cover - handled by runtime guard
     oauth2_credentials = None  # type: ignore[assignment]
 
 
-def _map_provider_error(  # noqa: C901, PLR0912
+def _map_provider_error(  # noqa: PLR0912
     exc: Exception,
     *,
     container: str,

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import base64
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 from ai_client_api import AIResponse
