@@ -250,6 +250,7 @@ markers = [
     "unit: Unit tests (fast, isolated, mocked)",
     "integration: Integration tests (medium speed, real dependencies)",
     "e2e: End-to-end tests (slow, full system with real APIs)",
+    "slack_integration: Tests requiring Slack integration (real or mocked Slack SDK)",
     "circleci: Tests runnable in CI without local credential files",
     "local_credentials: Tests requiring a local service account key file",
 ]
