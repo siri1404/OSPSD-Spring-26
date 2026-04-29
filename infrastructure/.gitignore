@@ -1,0 +1,15 @@
+# Real secret values.
+terraform.tfvars
+*.auto.tfvars
+
+# Local Terraform state.
+terraform.tfstate
+terraform.tfstate.backup
+.terraform.tfstate.lock.info
+
+# Provider plugins and local cache.
+.terraform/
+.terraform.lock.hcl
+
+# Plan output files.
+*.tfplan
