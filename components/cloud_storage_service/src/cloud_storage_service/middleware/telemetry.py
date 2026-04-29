@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
-from fastapi import Request, Response
+if TYPE_CHECKING:
+    from fastapi import Request
+    from starlette.responses import Response as StarletteResponse
+
 from prometheus_client import Counter, Histogram
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -51,7 +55,9 @@ ai_tool_calls_total = Counter(
 class PrometheusMiddleware(BaseHTTPMiddleware):
     """Middleware to track request metrics with Prometheus."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[StarletteResponse]]
+    ) -> StarletteResponse:
         """Process request and record metrics.
 
         Args:
@@ -87,10 +93,10 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def telemetry_middleware() -> PrometheusMiddleware:
-    """Create and return telemetry middleware instance.
+def telemetry_middleware() -> type[PrometheusMiddleware]:
+    """Create and return telemetry middleware class.
 
     Returns:
-        Configured PrometheusMiddleware instance.
+        PrometheusMiddleware class.
     """
     return PrometheusMiddleware

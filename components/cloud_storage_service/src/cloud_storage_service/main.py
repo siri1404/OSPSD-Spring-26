@@ -34,9 +34,9 @@ from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import PlainTextResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from gcp_client_impl import GCPCloudStorageClient
 from gemini_ai_client_impl import GeminiAiClient
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 # Load .env file from project root
 env_path = Path(__file__).resolve().parents[4] / ".env"
@@ -580,7 +580,7 @@ async def delete_object(
 
 
 @app.post("/ai/chat", tags=["AI"])
-async def ai_chat(
+async def ai_chat(  # noqa: C901
     prompt: str = Body(..., embed=True, description="Natural language prompt"),
     x_container: Annotated[str | None, Header(alias="X-Container")] = None,
     token: str = Depends(verify_token),
