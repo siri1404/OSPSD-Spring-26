@@ -56,6 +56,9 @@ class ChatNotificationWrapper:
             raise ValueError(msg)
 
         try:
+            if self._channel_id is None:
+                msg = "Channel ID is not configured"
+                raise RuntimeError(msg)
             response = self._chat_client.send_message(
                 channel_id=self._channel_id,
                 text=message,
