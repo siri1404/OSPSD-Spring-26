@@ -32,7 +32,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       # --- Chat integration ---
-      - key: CHAT_API_KEY
+      - key: SLACK_BOT_TOKEN
         sync: false
       - key: CHAT_CHANNEL_ID
         sync: false
