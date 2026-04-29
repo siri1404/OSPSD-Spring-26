@@ -55,9 +55,7 @@ ai_tool_calls_total = Counter(
 class PrometheusMiddleware(BaseHTTPMiddleware):
     """Middleware to track request metrics with Prometheus."""
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[StarletteResponse]]
-    ) -> StarletteResponse:
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[StarletteResponse]]) -> StarletteResponse:
         """Process request and record metrics.
 
         Args:
