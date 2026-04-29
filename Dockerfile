@@ -3,6 +3,11 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 
+# git is required because pyproject.toml pulls chat-client-api as a git+https dependency
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy workspace metadata first for better layer caching
 COPY pyproject.toml uv.lock ./
 COPY components components

@@ -28,3 +28,42 @@ services:
       #   value: your-dev-token-here
       # - key: DEV_ACCESS_TOKEN
       #   value: your-dev-token-here
+      # --- AI integration ---
+      - key: GEMINI_API_KEY
+        sync: false
+      # --- Chat integration ---
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: CHAT_CHANNEL_ID
+        sync: false
+
+  # Prometheus — scrapes /metrics from the app
+  # Private service: only reachable from other Render services in the same team.
+  # Grafana talks to it via http://prometheus:9090.
+  - type: pserv
+    name: prometheus
+    env: docker
+    plan: free
+    dockerfilePath: ./monitoring/Dockerfile.prometheus
+    dockerContext: ./monitoring
+    envVars:
+      - key: PROMETHEUS_SCRAPE_TARGET
+        value: cloud-storage-service-mcni.onrender.com
+
+  # Grafana — dashboards for the metrics above
+  - type: web
+    name: grafana
+    env: docker
+    plan: free
+    dockerfilePath: ./monitoring/Dockerfile.grafana
+    dockerContext: ./monitoring
+    healthCheckPath: /api/health
+    envVars:
+      - key: GF_SECURITY_ADMIN_USER
+        value: admin
+      - key: GF_SECURITY_ADMIN_PASSWORD
+        sync: false
+      - key: GF_SERVER_HTTP_PORT
+        value: 3000
+      - key: GF_INSTALL_PLUGINS
+        value: ""
