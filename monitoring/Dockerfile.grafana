@@ -1,0 +1,12 @@
+# syntax=docker/dockerfile:1
+FROM grafana/grafana:latest
+
+# Copy provisioning configs and dashboards
+COPY grafana-datasource.yml /etc/grafana/provisioning/datasources/
+COPY grafana-dashboard-provider.yml /etc/grafana/provisioning/dashboards/
+COPY grafana_dashboard.json /var/lib/grafana/dashboards/
+
+# Expose Grafana port
+EXPOSE 3000
+
+# Use default Grafana entrypoint

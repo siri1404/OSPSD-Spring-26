@@ -32,8 +32,9 @@ from cloud_storage_api.exceptions import (
 )
 from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from gcp_client_impl import GCPCloudStorageClient
 from gemini_ai_client_impl import GeminiAiClient
 
@@ -50,6 +51,7 @@ from cloud_storage_service.auth import (
     security,
     verify_token,
 )
+from cloud_storage_service.middleware.telemetry import PrometheusMiddleware, ai_tool_calls_total
 from cloud_storage_service.models import (
     HealthResponse,
     ListResponse,
@@ -65,6 +67,9 @@ app = FastAPI(
     description="RESTful API for cloud storage operations with OAuth 2.0 authentication",
     version="1.0.0",
 )
+
+# Add Prometheus telemetry middleware
+app.add_middleware(PrometheusMiddleware)
 
 # Container used by storage operations.
 GCS_BUCKET = os.getenv("GCS_BUCKET_NAME", "")
@@ -608,6 +613,12 @@ async def ai_chat(
     try:
         ai_response = ai_client.send_message(prompt=prompt, context=context or None)
 
+        # Track AI tool calls in Prometheus metrics
+        if ai_response.tool_calls:
+            for tool_name in ai_response.tool_calls:
+                # Mark as success if we got a response without exception
+                ai_tool_calls_total.labels(tool_name=tool_name, status="success").inc()
+
         # Send chat notification about AI action with real action data
         if chat_notification:
             # Resolve container for notification (use configured default if none provided)
@@ -700,6 +711,26 @@ async def head_object(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get object metadata: {exc}",
         ) from exc
+
+
+# ============================================================================
+# Metrics Endpoint
+# ============================================================================
+
+
+@app.get("/metrics", response_class=PlainTextResponse, tags=["Monitoring"])
+async def metrics() -> PlainTextResponse:
+    """Expose Prometheus metrics in text format.
+
+    Returns Prometheus-compatible metrics for scraping by Prometheus.
+
+    Returns:
+        Prometheus metrics in text format.
+    """
+    return PlainTextResponse(
+        content=generate_latest().decode("utf-8"),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 # Note: Default FastAPI exception handlers are used to preserve HTTPException details.

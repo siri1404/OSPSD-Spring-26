@@ -1,0 +1,21 @@
+# Prometheus configuration for scraping cloud storage service metrics
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'cloud-storage-monitor'
+    environment: 'production'
+
+scrape_configs:
+  - job_name: 'cloud-storage-service'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+    scheme: 'https'
+    static_configs:
+      - targets:
+          - 'cloud-storage-service-mcni.onrender.com'
+        labels:
+          service: 'cloud-storage-api'
+          vertical: 'storage'
