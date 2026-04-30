@@ -22,10 +22,9 @@ COPY grafana-dashboard-provider.yml /etc/grafana/provisioning/dashboards/
 COPY grafana_dashboard.json /var/lib/grafana/dashboards/
 
 # Fix permissions for grafana user (UID 472)
-RUN chown -R grafana:grafana /etc/grafana/provisioning /var/lib/grafana/dashboards
+RUN chown -R 472:0 /etc/grafana/provisioning /var/lib/grafana/dashboards
 
 # Switch back to grafana user
 USER grafana
 
 EXPOSE 3000
-
