@@ -12,7 +12,7 @@
 variable "REPO_URL" {
   description = "GitHub repo URL Render should deploy from."
   type        = string
-  default     = "https://github.com/2SpaceMasterRace/OSPSD-Spring-26"
+  default     = "https://github.com/siri1404/OSPSD-Spring-26.git"
 }
 
 variable "GIT_BRANCH" {
