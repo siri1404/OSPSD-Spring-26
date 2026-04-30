@@ -3,7 +3,7 @@
 # Provisions three services on Render using the official render-oss/render
 # provider:
 #   - render_web_service.cloud_storage     → FastAPI app (public)
-#   - render_private_service.prometheus    → Prometheus scraper (private)
+#   - render_web_service.prometheus    → Prometheus scraper (private)
 #   - render_web_service.grafana           → Grafana dashboards (public)
 #
 # Keep this file in sync with ../render.yaml. The YAML blueprint is for
@@ -39,7 +39,9 @@ resource "render_web_service" "cloud_storage" {
   plan              = "free"
   region            = var.RENDER_REGION
   health_check_path = "/health"
-
+  lifecycle {
+    ignore_changes = all
+  }
   runtime_source = {
     docker = {
       auto_deploy     = true
@@ -65,7 +67,7 @@ resource "render_web_service" "cloud_storage" {
 }
 
 # Prometheus — scrapes /metrics from the cloud_storage service
-resource "render_private_service" "prometheus" {
+resource "render_web_service" "prometheus" {
   name   = "prometheus"
   plan   = "free"
   region = var.RENDER_REGION
@@ -114,5 +116,5 @@ resource "render_web_service" "grafana" {
     GF_DATASOURCE_PROMETHEUS_URL = { value = "http://prometheus:9090" }
   }
 
-  depends_on = [render_private_service.prometheus]
+  depends_on = [render_web_service.prometheus]
 }

@@ -181,6 +181,12 @@ jobs:
       - attach_workspace:
           at: ~/project
       - run:
+          name: "Import existing Render service into Terraform state"
+          command: terraform import render_web_service.cloud_storage $RENDER_SERVICE_ID
+      - run:
+          name: "Terraform Plan (post-import)"
+          command: terraform plan -input=false -out=tfplan
+      - run:
           name: "Terraform Apply"
           command: terraform apply -input=false -auto-approve tfplan
       - run:

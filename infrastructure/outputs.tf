@@ -19,7 +19,7 @@ output "grafana_url" {
 
 output "prometheus_service_name" {
   description = "Render name for the Prometheus private service (reachable only from Grafana)."
-  value       = render_private_service.prometheus.name
+  value       = render_web_service.prometheus.name
 }
 
 output "cloud_storage_service_id" {
