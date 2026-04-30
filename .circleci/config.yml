@@ -181,6 +181,9 @@ jobs:
       - attach_workspace:
           at: ~/project
       - run:
+          name: "Terraform Init"
+          command: terraform init -input=false
+      - run:
           name: "Import existing Render service into Terraform state"
           command: terraform import render_web_service.cloud_storage $RENDER_SERVICE_ID
       - run:
