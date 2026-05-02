@@ -16,6 +16,7 @@ dependencies = [
     "google-cloud-storage>=2.14.0",
     "google-auth>=2.27.0",
     "prometheus-client>=0.20.0",
+    "slack-sdk>=3.27.0",
     "gcp-client-impl",
     "cloud-storage-api",
     "ai-client-api",

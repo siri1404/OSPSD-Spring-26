@@ -1,38 +1,27 @@
 from http import HTTPStatus
-from typing import Any, cast
-from urllib.parse import quote
+from typing import Any
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response, UNSET
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
 from ...models.o_auth_callback_response import OAuthCallbackResponse
-from typing import cast
-
+from ...types import UNSET, Response
 
 
 def _get_kwargs(
     *,
     code: str,
     state: str,
-
 ) -> dict[str, Any]:
-    
-
-    
-
     params: dict[str, Any] = {}
 
     params["code"] = code
 
     params["state"] = state
 
-
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
-
 
     _kwargs: dict[str, Any] = {
         "method": "get",
@@ -40,23 +29,19 @@ def _get_kwargs(
         "params": params,
     }
 
-
     return _kwargs
 
 
-
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> HTTPValidationError | OAuthCallbackResponse | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> HTTPValidationError | OAuthCallbackResponse | None:
     if response.status_code == 200:
         response_200 = OAuthCallbackResponse.from_dict(response.json())
-
-
 
         return response_200
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
-
-
 
         return response_422
 
@@ -66,7 +51,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[HTTPValidationError | OAuthCallbackResponse]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[HTTPValidationError | OAuthCallbackResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -80,24 +67,10 @@ def sync_detailed(
     client: AuthenticatedClient | Client,
     code: str,
     state: str,
-
 ) -> Response[HTTPValidationError | OAuthCallbackResponse]:
-    """ Oauth Callback
+    """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for provider access token and creates a service-owned session.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Service-owned session token (opaque, not the provider token).
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google
@@ -109,13 +82,11 @@ def sync_detailed(
 
     Returns:
         Response[HTTPValidationError | OAuthCallbackResponse]
-     """
-
+    """
 
     kwargs = _get_kwargs(
         code=code,
-state=state,
-
+        state=state,
     )
 
     response = client.get_httpx_client().request(
@@ -124,29 +95,16 @@ state=state,
 
     return _build_response(client=client, response=response)
 
+
 def sync(
     *,
     client: AuthenticatedClient | Client,
     code: str,
     state: str,
-
 ) -> HTTPValidationError | OAuthCallbackResponse | None:
-    """ Oauth Callback
+    """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for provider access token and creates a service-owned session.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Service-owned session token (opaque, not the provider token).
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google
@@ -158,39 +116,24 @@ def sync(
 
     Returns:
         HTTPValidationError | OAuthCallbackResponse
-     """
-
+    """
 
     return sync_detailed(
         client=client,
-code=code,
-state=state,
-
+        code=code,
+        state=state,
     ).parsed
+
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     code: str,
     state: str,
-
 ) -> Response[HTTPValidationError | OAuthCallbackResponse]:
-    """ Oauth Callback
+    """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for provider access token and creates a service-owned session.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Service-owned session token (opaque, not the provider token).
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google
@@ -202,44 +145,27 @@ async def asyncio_detailed(
 
     Returns:
         Response[HTTPValidationError | OAuthCallbackResponse]
-     """
-
+    """
 
     kwargs = _get_kwargs(
         code=code,
-state=state,
-
+        state=state,
     )
 
-    response = await client.get_async_httpx_client().request(
-        **kwargs
-    )
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
+
 
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
     code: str,
     state: str,
-
 ) -> HTTPValidationError | OAuthCallbackResponse | None:
-    """ Oauth Callback
+    """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for provider access token and creates a service-owned session.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Service-owned session token (opaque, not the provider token).
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google
@@ -251,12 +177,12 @@ async def asyncio(
 
     Returns:
         HTTPValidationError | OAuthCallbackResponse
-     """
+    """
 
-
-    return (await asyncio_detailed(
-        client=client,
-code=code,
-state=state,
-
-    )).parsed
+    return (
+        await asyncio_detailed(
+            client=client,
+            code=code,
+            state=state,
+        )
+    ).parsed

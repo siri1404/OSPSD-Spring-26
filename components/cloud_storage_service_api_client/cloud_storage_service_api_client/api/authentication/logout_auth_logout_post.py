@@ -1,33 +1,20 @@
 from http import HTTPStatus
-from typing import Any, cast
-from urllib.parse import quote
+from typing import Any
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response, UNSET
 from ... import errors
+from ...client import AuthenticatedClient, Client
+from ...types import Response
 
 
-
-
-def _get_kwargs(
-    
-) -> dict[str, Any]:
-    
-
-    
-
-    
-
+def _get_kwargs() -> dict[str, Any]:
     _kwargs: dict[str, Any] = {
         "method": "post",
         "url": "/auth/logout",
     }
 
-
     return _kwargs
-
 
 
 def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Any | None:
@@ -52,19 +39,10 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-
 ) -> Response[Any]:
-    """ Logout
+    """Logout
 
-     Logout by invalidating the session token.
-
-    Removes the service-owned session token, effectively revoking access.
-
-    Args:
-        credentials: HTTP bearer credentials containing the raw token.
-
-    Returns:
-        204 No Content on success.
+     Invalidate the current session token.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -72,12 +50,9 @@ def sync_detailed(
 
     Returns:
         Response[Any]
-     """
+    """
 
-
-    kwargs = _get_kwargs(
-        
-    )
+    kwargs = _get_kwargs()
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -89,19 +64,10 @@ def sync_detailed(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-
 ) -> Response[Any]:
-    """ Logout
+    """Logout
 
-     Logout by invalidating the session token.
-
-    Removes the service-owned session token, effectively revoking access.
-
-    Args:
-        credentials: HTTP bearer credentials containing the raw token.
-
-    Returns:
-        204 No Content on success.
+     Invalidate the current session token.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -109,16 +75,10 @@ async def asyncio_detailed(
 
     Returns:
         Response[Any]
-     """
+    """
 
+    kwargs = _get_kwargs()
 
-    kwargs = _get_kwargs(
-        
-    )
-
-    response = await client.get_async_httpx_client().request(
-        **kwargs
-    )
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
-

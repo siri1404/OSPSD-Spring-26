@@ -40,6 +40,41 @@ class CloudStorageAdapter(CloudStorageClient):
         """Initialize adapter with service base URL and bearer token."""
         self._client = AuthenticatedClient(base_url=base_url.rstrip("/"), token=token)
 
+    @staticmethod
+    def _raise_validation_or_runtime(operation: str, parsed: object, status_code: int) -> NoReturn:
+        if status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            msg = f"{operation} authentication failed (status {status_code})"
+            raise AuthenticationError(msg)
+
+        if status_code == HTTPStatus.NOT_FOUND:
+            msg = f"{operation} container not found (status {status_code})"
+            raise ContainerNotFoundError(msg)
+
+        if isinstance(parsed, HTTPValidationError):
+            locations: set[str] = set()
+            if not isinstance(parsed.detail, Unset):
+                for error in parsed.detail:
+                    for token in error.loc:
+                        locations.add(str(token))
+
+            if "container" in locations:
+                msg = f"{operation} invalid container (status {status_code})"
+                raise InvalidContainerError(msg)
+
+            if operation != "list_files" and ("key" in locations or "object_name" in locations):
+                msg = f"{operation} invalid object name (status {status_code})"
+                raise InvalidObjectNameError(msg)
+
+            msg = f"{operation} request validation failed (status {status_code})"
+            raise StorageBackendError(msg)
+
+        if status_code in (HTTPStatus.BAD_REQUEST, HTTPStatus.UNPROCESSABLE_ENTITY):
+            msg = f"{operation} request validation failed (status {status_code})"
+            raise StorageBackendError(msg)
+
+        msg = f"{operation} failed with status {status_code}"
+        raise StorageBackendError(msg)
+
     def upload_file(
         self,
         container: str,
@@ -216,7 +251,7 @@ class CloudStorageAdapter(CloudStorageClient):
         parsed = response.parsed
 
         if response.status_code == HTTPStatus.NO_CONTENT:
-            return DeleteResult(deleted=True, version_id=None, request_charged=None)
+            return DeleteResult(deleted=True, version_id=None, request_charged=False)
         if response.status_code == HTTPStatus.NOT_FOUND:
             if self._is_container_not_found_response(response.content):
                 msg = f"Container not found: {container}"
@@ -266,72 +301,35 @@ class CloudStorageAdapter(CloudStorageClient):
     def _to_object_info(obj: ObjectInfoResponse) -> ObjectInfo:
         """Convert service ObjectInfoResponse to shared ObjectInfo model.
 
-        Maps service response fields to the 9-field ObjectInfo contract:
-        - key → object_name
-        - etag → integrity
-        - content_type → data_type
-        - size_bytes → size_bytes
-        - updated_at → updated_at
-        - metadata → metadata
-        - version_id, encryption, storage_tier → None (not exposed by service)
+        Service and shared-API now use the same field names (peer review #1 fix);
+        this is a 1:1 mapping with Unset -> None coercion.
         """
-        size_bytes = None if isinstance(obj.size_bytes, Unset) else obj.size_bytes
-        integrity = None if isinstance(obj.etag, Unset) else obj.etag
-        updated_at = None if isinstance(obj.updated_at, Unset) else obj.updated_at
-        data_type = None if isinstance(obj.content_type, Unset) else obj.content_type
-
-        metadata: dict[str, str] | None
-        if isinstance(obj.metadata, Unset) or obj.metadata is None:
-            metadata = None
-        else:
-            metadata = {str(k): str(v) for k, v in obj.metadata.additional_properties.items()}
-
         return ObjectInfo(
-            object_name=obj.key,
-            version_id=None,
-            data_type=data_type,
-            integrity=integrity,
-            encryption=None,
-            storage_tier=None,
-            size_bytes=size_bytes,
-            updated_at=updated_at,
-            metadata=metadata,
+            object_name=obj.object_name,
+            version_id=None if isinstance(obj.version_id, Unset) else obj.version_id,
+            data_type=None if isinstance(obj.data_type, Unset) else obj.data_type,
+            integrity=None if isinstance(obj.integrity, Unset) else obj.integrity,
+            encryption=None if isinstance(obj.encryption, Unset) else obj.encryption,
+            storage_tier=None if isinstance(obj.storage_tier, Unset) else obj.storage_tier,
+            size_bytes=None if isinstance(obj.size_bytes, Unset) else obj.size_bytes,
+            updated_at=None if isinstance(obj.updated_at, Unset) else obj.updated_at,
+            metadata=CloudStorageAdapter._coerce_metadata(obj.metadata),
         )
 
     @staticmethod
-    def _raise_validation_or_runtime(operation: str, parsed: object, status_code: int) -> NoReturn:
-        if status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
-            msg = f"{operation} authentication failed (status {status_code})"
-            raise AuthenticationError(msg)
+    def _coerce_metadata(metadata: object) -> dict[str, str] | None:
+        """Coerce SDK metadata (Unset | ObjectInfoResponseMetadata | None) to dict | None.
 
-        if status_code == HTTPStatus.NOT_FOUND:
-            msg = f"{operation} container not found (status {status_code})"
-            raise ContainerNotFoundError(msg)
-
-        if isinstance(parsed, HTTPValidationError):
-            locations: set[str] = set()
-            if not isinstance(parsed.detail, Unset):
-                for error in parsed.detail:
-                    for token in error.loc:
-                        locations.add(str(token))
-
-            if "container" in locations:
-                msg = f"{operation} invalid container (status {status_code})"
-                raise InvalidContainerError(msg)
-
-            if operation != "list_files" and ("key" in locations or "object_name" in locations):
-                msg = f"{operation} invalid object name (status {status_code})"
-                raise InvalidObjectNameError(msg)
-
-            msg = f"{operation} request validation failed (status {status_code})"
-            raise StorageBackendError(msg)
-
-        if status_code in (HTTPStatus.BAD_REQUEST, HTTPStatus.UNPROCESSABLE_ENTITY):
-            msg = f"{operation} request validation failed (status {status_code})"
-            raise StorageBackendError(msg)
-
-        msg = f"{operation} failed with status {status_code}"
-        raise StorageBackendError(msg)
+        The SDK represents optional metadata as either `Unset`, `None`, or an
+        object exposing `additional_properties`. Convert these to a plain
+        dict[str, str] or `None`.
+        """
+        if isinstance(metadata, Unset) or metadata is None:
+            return None
+        additional = getattr(metadata, "additional_properties", None)
+        if additional is None:
+            return None
+        return {str(k): str(v) for k, v in additional.items()}
 
     @staticmethod
     def _is_container_not_found_response(content: bytes) -> bool:

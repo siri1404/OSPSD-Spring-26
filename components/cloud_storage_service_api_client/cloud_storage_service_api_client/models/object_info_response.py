@@ -1,57 +1,51 @@
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
-from attrs import field as _attrs_field
-
-from ..types import UNSET, Unset
-
-from ..types import UNSET, Unset
 from dateutil.parser import isoparse
-from typing import cast
-import datetime
+
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-  from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
-
-
-
+    from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
 
 
 T = TypeVar("T", bound="ObjectInfoResponse")
 
 
-
 @_attrs_define
 class ObjectInfoResponse:
-    """ Response model for object metadata.
+    """Object metadata mirroring the shared cross-team ObjectInfo contract.
 
-        Attributes:
-            key (str):
-            size_bytes (int | None | Unset):
-            etag (None | str | Unset):
-            updated_at (datetime.datetime | None | Unset):
-            content_type (None | str | Unset):
-            metadata (None | ObjectInfoResponseMetadataType0 | Unset):
-     """
+    Attributes:
+        object_name (str): Object key/path in storage
+        size_bytes (int | None | Unset): Object size in bytes
+        integrity (None | str | Unset): ETag or content hash
+        data_type (None | str | Unset): MIME type (e.g. 'application/json')
+        updated_at (datetime.datetime | None | Unset): Last modified timestamp (UTC)
+        version_id (None | str | Unset): Provider version or generation identifier
+        encryption (None | str | Unset): KMS key name if customer-managed encryption is used
+        storage_tier (None | str | Unset): Storage class (e.g. STANDARD, NEARLINE, COLDLINE, ARCHIVE)
+        metadata (None | ObjectInfoResponseMetadataType0 | Unset): Custom user-defined metadata
+    """
 
-    key: str
+    object_name: str
     size_bytes: int | None | Unset = UNSET
-    etag: None | str | Unset = UNSET
+    integrity: None | str | Unset = UNSET
+    data_type: None | str | Unset = UNSET
     updated_at: datetime.datetime | None | Unset = UNSET
-    content_type: None | str | Unset = UNSET
+    version_id: None | str | Unset = UNSET
+    encryption: None | str | Unset = UNSET
+    storage_tier: None | str | Unset = UNSET
     metadata: None | ObjectInfoResponseMetadataType0 | Unset = UNSET
-    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
-
-
-
-
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
-        key = self.key
+
+        object_name = self.object_name
 
         size_bytes: int | None | Unset
         if isinstance(self.size_bytes, Unset):
@@ -59,11 +53,17 @@ class ObjectInfoResponse:
         else:
             size_bytes = self.size_bytes
 
-        etag: None | str | Unset
-        if isinstance(self.etag, Unset):
-            etag = UNSET
+        integrity: None | str | Unset
+        if isinstance(self.integrity, Unset):
+            integrity = UNSET
         else:
-            etag = self.etag
+            integrity = self.integrity
+
+        data_type: None | str | Unset
+        if isinstance(self.data_type, Unset):
+            data_type = UNSET
+        else:
+            data_type = self.data_type
 
         updated_at: None | str | Unset
         if isinstance(self.updated_at, Unset):
@@ -73,11 +73,23 @@ class ObjectInfoResponse:
         else:
             updated_at = self.updated_at
 
-        content_type: None | str | Unset
-        if isinstance(self.content_type, Unset):
-            content_type = UNSET
+        version_id: None | str | Unset
+        if isinstance(self.version_id, Unset):
+            version_id = UNSET
         else:
-            content_type = self.content_type
+            version_id = self.version_id
+
+        encryption: None | str | Unset
+        if isinstance(self.encryption, Unset):
+            encryption = UNSET
+        else:
+            encryption = self.encryption
+
+        storage_tier: None | str | Unset
+        if isinstance(self.storage_tier, Unset):
+            storage_tier = UNSET
+        else:
+            storage_tier = self.storage_tier
 
         metadata: dict[str, Any] | None | Unset
         if isinstance(self.metadata, Unset):
@@ -87,32 +99,38 @@ class ObjectInfoResponse:
         else:
             metadata = self.metadata
 
-
         field_dict: dict[str, Any] = {}
-        field_dict.update(self.additional_properties)
-        field_dict.update({
-            "key": key,
-        })
+
+        field_dict.update(
+            {
+                "object_name": object_name,
+            }
+        )
         if size_bytes is not UNSET:
             field_dict["size_bytes"] = size_bytes
-        if etag is not UNSET:
-            field_dict["etag"] = etag
+        if integrity is not UNSET:
+            field_dict["integrity"] = integrity
+        if data_type is not UNSET:
+            field_dict["data_type"] = data_type
         if updated_at is not UNSET:
             field_dict["updated_at"] = updated_at
-        if content_type is not UNSET:
-            field_dict["content_type"] = content_type
+        if version_id is not UNSET:
+            field_dict["version_id"] = version_id
+        if encryption is not UNSET:
+            field_dict["encryption"] = encryption
+        if storage_tier is not UNSET:
+            field_dict["storage_tier"] = storage_tier
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
 
         return field_dict
 
-
-
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.object_info_response_metadata_type_0 import ObjectInfoResponseMetadataType0
+
         d = dict(src_dict)
-        key = d.pop("key")
+        object_name = d.pop("object_name")
 
         def _parse_size_bytes(data: object) -> int | None | Unset:
             if data is None:
@@ -123,16 +141,23 @@ class ObjectInfoResponse:
 
         size_bytes = _parse_size_bytes(d.pop("size_bytes", UNSET))
 
-
-        def _parse_etag(data: object) -> None | str | Unset:
+        def _parse_integrity(data: object) -> None | str | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
             return cast(None | str | Unset, data)
 
-        etag = _parse_etag(d.pop("etag", UNSET))
+        integrity = _parse_integrity(d.pop("integrity", UNSET))
 
+        def _parse_data_type(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        data_type = _parse_data_type(d.pop("data_type", UNSET))
 
         def _parse_updated_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
@@ -144,8 +169,6 @@ class ObjectInfoResponse:
                     raise TypeError()
                 updated_at_type_0 = isoparse(data)
 
-
-
                 return updated_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
@@ -153,16 +176,32 @@ class ObjectInfoResponse:
 
         updated_at = _parse_updated_at(d.pop("updated_at", UNSET))
 
-
-        def _parse_content_type(data: object) -> None | str | Unset:
+        def _parse_version_id(data: object) -> None | str | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
             return cast(None | str | Unset, data)
 
-        content_type = _parse_content_type(d.pop("content_type", UNSET))
+        version_id = _parse_version_id(d.pop("version_id", UNSET))
 
+        def _parse_encryption(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        encryption = _parse_encryption(d.pop("encryption", UNSET))
+
+        def _parse_storage_tier(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        storage_tier = _parse_storage_tier(d.pop("storage_tier", UNSET))
 
         def _parse_metadata(data: object) -> None | ObjectInfoResponseMetadataType0 | Unset:
             if data is None:
@@ -174,8 +213,6 @@ class ObjectInfoResponse:
                     raise TypeError()
                 metadata_type_0 = ObjectInfoResponseMetadataType0.from_dict(data)
 
-
-
                 return metadata_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
@@ -183,32 +220,16 @@ class ObjectInfoResponse:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
-
         object_info_response = cls(
-            key=key,
+            object_name=object_name,
             size_bytes=size_bytes,
-            etag=etag,
+            integrity=integrity,
+            data_type=data_type,
             updated_at=updated_at,
-            content_type=content_type,
+            version_id=version_id,
+            encryption=encryption,
+            storage_tier=storage_tier,
             metadata=metadata,
         )
 
-
-        object_info_response.additional_properties = d
         return object_info_response
-
-    @property
-    def additional_keys(self) -> list[str]:
-        return list(self.additional_properties.keys())
-
-    def __getitem__(self, key: str) -> Any:
-        return self.additional_properties[key]
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        self.additional_properties[key] = value
-
-    def __delitem__(self, key: str) -> None:
-        del self.additional_properties[key]
-
-    def __contains__(self, key: str) -> bool:
-        return key in self.additional_properties

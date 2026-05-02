@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
-from chat_client_wrapper.wrapper import ChatNotificationWrapper
+from .notifications import NotificationMessages
+from .wrapper import ChatNotificationWrapper
 
-__all__ = ["ChatNotificationWrapper"]
+__all__ = ["ChatNotificationWrapper", "NotificationMessages"]
