@@ -162,13 +162,13 @@ jobs:
           name: "Terraform Init"
           command: terraform init -input=false
       - run:
-          name: "Import existing Render service if not in state"
+          name: "Import existing Render services if not in state"
           command: |
             if ! terraform state list | grep -q "render_web_service.cloud_storage"; then
-              echo "Resource not in state, importing..."
+              echo "cloud_storage not in state, importing..."
               terraform import render_web_service.cloud_storage $RENDER_SERVICE_ID
             else
-              echo "Resource already in state, skipping import"
+              echo "cloud_storage already in state, skipping"
             fi
       - run:
           name: "Terraform Plan (post-import)"

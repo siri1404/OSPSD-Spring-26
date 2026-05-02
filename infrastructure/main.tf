@@ -14,7 +14,7 @@ terraform {
   required_providers {
     render = {
       source  = "render-oss/render"
-      version = "~> 1.6"
+      version = "1.8.0"
     }
   }
 
@@ -66,13 +66,19 @@ resource "render_web_service" "cloud_storage" {
     SLACK_BOT_TOKEN = { value = var.SLACK_BOT_TOKEN }
     CHAT_CHANNEL_ID = { value = var.CHAT_CHANNEL_ID }
   }
+
+  lifecycle {
+    ignore_changes = [
+      maintenance_mode,
+    ]
+  }
 }
 
 # ============================================================================
 # Prometheus — scrapes /metrics from the cloud_storage service
 # ============================================================================
 resource "render_web_service" "prometheus" {
-  name              = "team6-prometheus"
+  name              = "prometheus"
   plan              = "free"
   region            = var.RENDER_REGION
   health_check_path = "/-/healthy"
@@ -92,6 +98,12 @@ resource "render_web_service" "prometheus" {
     PROMETHEUS_SCRAPE_TARGET = { value = "cloud-storage-service:8000" }
   }
 
+  lifecycle {
+    ignore_changes = [
+      maintenance_mode,
+    ]
+  }
+
   depends_on = [render_web_service.cloud_storage]
 }
 
@@ -99,7 +111,7 @@ resource "render_web_service" "prometheus" {
 # Grafana — dashboards on top of Prometheus
 # ============================================================================
 resource "render_web_service" "grafana" {
-  name              = "team6-grafana"
+  name              = "grafana"
   plan              = "free"
   region            = var.RENDER_REGION
   health_check_path = "/api/health"
@@ -120,7 +132,13 @@ resource "render_web_service" "grafana" {
     GF_SERVER_HTTP_PORT        = { value = "3000" }
     # Points Grafana at the Prometheus private service by its Render name.
     # Render resolves http://prometheus:9090 within the team network.
-    GF_DATASOURCE_PROMETHEUS_URL = { value = "http://team6-prometheus:9090" }
+    GF_DATASOURCE_PROMETHEUS_URL = { value = "http://prometheus:9090" }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      maintenance_mode,
+    ]
   }
 
   depends_on = [render_web_service.prometheus]
