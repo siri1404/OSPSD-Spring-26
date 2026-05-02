@@ -1,16 +1,17 @@
 """Integration tests for AI + Storage flows.
 
-These tests verify the actual Gemini AI client tool loop by:
-1. Mocking genai.Client responses with tool_call and text_response sequences
-2. Using real GeminiAiClient (not mocked AiClientApi)
-3. Verifying tool dispatch to actual storage client methods
-4. Asserting end-to-end integration between /ai/chat and storage operations
+These tests exercise the /ai/chat endpoint with the AI client mocked at the
+dependency boundary (via mock_get_ai_client autoused by conftest). They verify
+that the endpoint correctly:
+- surfaces the AI's response and action_taken fields
+- forwards prompts to send_message_with_metadata
+- preserves response content across sequential calls
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from ai_client_api import AIResponse
@@ -19,48 +20,54 @@ if TYPE_CHECKING:
     from fastapi.testclient import TestClient
 
 
+# ---------------------------------------------------------------------------
+# Individual tool invocations
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.integration
 def test_ai_chat_list_files_tool_invocation(
     client: TestClient,
     auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
     mock_storage_client: MagicMock,
 ) -> None:
-    """Integration: /ai/chat processes list files request and returns response.
+    """/ai/chat with a list-files prompt returns list_files action_taken."""
+    mock_ai_client.send_message_with_metadata.return_value = AIResponse(
+        text="You have 3 files.",
+        action_taken="list_files",
+        tool_calls=["list_files"],
+        tool_args={"container": "test-bucket"},
+    )
 
-    Verifies:
-    - /ai/chat endpoint accepts list files prompt
-    - Response has correct structure (response, action_taken fields)
-    - Mocked AI client processes request through dependency injection
-    """
-    # Act: Send list files prompt
     response = client.post(
         "/ai/chat",
         json={"prompt": "list all files in the bucket"},
         headers=auth_headers,
     )
 
-    # Assert: Response indicates operation was processed
     assert response.status_code == 200
     data = response.json()
-    assert "response" in data
-    assert "action_taken" in data
-    assert data["response"] is not None
+    assert data["response"] == "You have 3 files."
+    assert data["action_taken"] == "list_files"
+    mock_ai_client.send_message_with_metadata.assert_called_once()
 
 
 @pytest.mark.integration
 def test_ai_chat_delete_file_tool_invocation(
     client: TestClient,
     auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
     mock_storage_client: MagicMock,
 ) -> None:
-    """Integration: AI delete_file tool is invoked.
+    """/ai/chat with a delete prompt returns delete_file action_taken."""
+    mock_ai_client.send_message_with_metadata.return_value = AIResponse(
+        text="Deleted temp.txt",
+        action_taken="delete_file",
+        tool_calls=["delete_file"],
+        tool_args={"container": "test-bucket", "object_name": "temp.txt"},
+    )
 
-    Verifies:
-    - /ai/chat processes delete request through Gemini tool loop
-    - delete_file tool is dispatched to storage client
-    - Tool args are correctly extracted and passed
-    """
-    # Act: Send delete prompt
     response = client.post(
         "/ai/chat",
         json={"prompt": "delete the file named temp.txt"},
@@ -69,23 +76,25 @@ def test_ai_chat_delete_file_tool_invocation(
 
     assert response.status_code == 200
     data = response.json()
-    assert "action_taken" in data
-    assert data["response"]  # Non-empty response
+    assert data["action_taken"] == "delete_file"
+    assert "Deleted" in data["response"]
 
 
 @pytest.mark.integration
 def test_ai_chat_get_file_info_tool_invocation(
     client: TestClient,
     auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
     mock_storage_client: MagicMock,
 ) -> None:
-    """Integration: AI get_file_info tool is invoked.
+    """/ai/chat with a metadata prompt returns get_file_info action_taken."""
+    mock_ai_client.send_message_with_metadata.return_value = AIResponse(
+        text="report.pdf is 5.2 MB, application/pdf.",
+        action_taken="get_file_info",
+        tool_calls=["get_file_info"],
+        tool_args={"container": "test-bucket", "object_name": "report.pdf"},
+    )
 
-    Verifies:
-    - get_file_info tool is recognized and dispatched
-    - Storage client method is called with object_name
-    """
-    # Act: Send prompt requesting file information
     response = client.post(
         "/ai/chat",
         json={"prompt": "what is the size and type of report.pdf"},
@@ -94,125 +103,134 @@ def test_ai_chat_get_file_info_tool_invocation(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["response"]
+    assert data["action_taken"] == "get_file_info"
+    assert "5.2 MB" in data["response"]
 
 
 @pytest.mark.integration
 def test_ai_chat_download_file_tool_invocation(
     client: TestClient,
     auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
     mock_storage_client: MagicMock,
 ) -> None:
-    """Integration: AI download_file tool is invoked.
+    """/ai/chat with a download prompt returns download_file action_taken."""
+    mock_ai_client.send_message_with_metadata.return_value = AIResponse(
+        text="Downloaded data.json",
+        action_taken="download_file",
+        tool_calls=["download_file"],
+        tool_args={"container": "test-bucket", "object_name": "data.json"},
+    )
 
-    Verifies:
-    - download_file tool works through the Gemini loop
-    - Storage client download method is called
-    """
-    # Act: Send download prompt
     response = client.post(
         "/ai/chat",
         json={"prompt": "download and read data.json"},
         headers=auth_headers,
     )
 
-    # Assert: Success  # noqa: ERA001
     assert response.status_code == 200
     data = response.json()
-    assert data["response"]
+    assert data["action_taken"] == "download_file"
+    assert "Downloaded" in data["response"]
 
 
 @pytest.mark.integration
 def test_ai_chat_upload_file_tool_invocation(
     client: TestClient,
     auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
     mock_storage_client: MagicMock,
 ) -> None:
-    """Integration: AI can invoke upload_file tool.
+    """/ai/chat with an upload prompt returns upload_file action_taken."""
+    mock_ai_client.send_message_with_metadata.return_value = AIResponse(
+        text="Uploaded config.yaml",
+        action_taken="upload_file",
+        tool_calls=["upload_file"],
+        tool_args={
+            "container": "test-bucket",
+            "remote_path": "config.yaml",
+        },
+    )
 
-    Verifies:
-    - upload_file tool is available to Gemini
-    - Tool invocation routes to storage client
-    """
-    # Act: Send upload prompt
     response = client.post(
         "/ai/chat",
         json={"prompt": "upload the new configuration file"},
         headers=auth_headers,
     )
 
-    # Assert: Success  # noqa: ERA001
     assert response.status_code == 200
     data = response.json()
-    assert data["response"]
+    assert data["action_taken"] == "upload_file"
+    assert "Uploaded" in data["response"]
+
+
+# ---------------------------------------------------------------------------
+# Prompt forwarding and sequential operations
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_ai_storage_tool_loop_executes_through_gemini(
+def test_ai_chat_forwards_prompt_to_ai_client(
     client: TestClient,
     auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
     mock_storage_client: MagicMock,
 ) -> None:
-    """Integration: Tool loop executes through real GeminiAiClient.
+    """/ai/chat forwards the user's prompt verbatim to send_message_with_metadata."""
+    mock_ai_client.send_message_with_metadata.return_value = AIResponse(
+        text="ok",
+        action_taken="list_files",
+        tool_calls=["list_files"],
+    )
 
-    This is the critical test proving integration vs. unit testing.
-    If this passes, the tool loop ran. If it fails, AiClientApi is mocked at endpoint.
-
-    Verifies:
-    - Request reaches /ai/chat endpoint
-    - Endpoint calls actual GeminiAiClient (not mocked)
-    - GeminiAiClient recognizes tools and dispatches to storage
-    - Response indicates tool was invoked
-    """
-    # Act: Send a prompt that requires tool invocation
     response = client.post(
         "/ai/chat",
         json={"prompt": "list files"},
         headers=auth_headers,
     )
 
-    # Assert: Success and response structure is correct
     assert response.status_code == 200
-    data = response.json()
-
-    # These assertions prove the tool loop executed:
-    assert "response" in data
-    assert "action_taken" in data
-    assert isinstance(data["response"], str)
-    assert len(data["response"]) > 0
+    mock_ai_client.send_message_with_metadata.assert_called_once()
+    kwargs = mock_ai_client.send_message_with_metadata.call_args.kwargs
+    assert kwargs["prompt"] == "list files"
 
 
 @pytest.mark.integration
 def test_multiple_sequential_ai_operations(
     client: TestClient,
     auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
     mock_storage_client: MagicMock,
 ) -> None:
-    """Integration: Multiple sequential AI operations each execute tool loop.
+    """Sequential /ai/chat calls each invoke the AI client and return distinct responses."""
+    mock_ai_client.send_message_with_metadata.side_effect = [
+        AIResponse(
+            text="Listed 5 files",
+            action_taken="list_files",
+            tool_calls=["list_files"],
+            tool_args={"container": "test-bucket"},
+        ),
+        AIResponse(
+            text="report.pdf info",
+            action_taken="get_file_info",
+            tool_calls=["get_file_info"],
+            tool_args={"container": "test-bucket", "object_name": "report.pdf"},
+        ),
+    ]
 
-    Verifies:
-    - Each AI request independently executes tool loop
-    - State does not leak between requests
-    - Tool invocations accumulate correctly
-    """
-    # Act: Send first prompt
     response1 = client.post(
         "/ai/chat",
         json={"prompt": "list files"},
         headers=auth_headers,
     )
-
-    # Act: Send second prompt
     response2 = client.post(
         "/ai/chat",
-        json={"prompt": "get file info"},
+        json={"prompt": "get file info on report.pdf"},
         headers=auth_headers,
     )
 
-    # Assert: Both successful
     assert response1.status_code == 200
     assert response2.status_code == 200
-
-    # Assert: Each has content
-    assert response1.json()["response"]
-    assert response2.json()["response"]
+    assert response1.json()["action_taken"] == "list_files"
+    assert response2.json()["action_taken"] == "get_file_info"
+    assert mock_ai_client.send_message_with_metadata.call_count == 2

@@ -5,26 +5,78 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
+import os
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from cloud_storage_api import CloudStorageClient
-
 from cloud_storage_api.exceptions import (
+    ContainerNotFoundError,
     LocalFileAccessError,
     ObjectNotFoundError,
 )
+from google.genai import types as genai_types
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-except ImportError:
-    genai = None  # type: ignore[assignment]
-    genai_types = None  # type: ignore[assignment]
+if TYPE_CHECKING:
+    from cloud_storage_api import CloudStorageClient
+    from cloud_storage_api.models import ObjectInfo
+
+
+# ============================================================================
+# Constants
+# ============================================================================
+_TEXT_EXTENSIONS = frozenset(
+    {
+        ".txt",
+        ".md",
+        ".csv",
+        ".json",
+        ".log",
+        ".py",
+        ".yaml",
+        ".yml",
+    }
+)
+
+_PDF_EXTENSION = ".pdf"
+_PDF_BASE64_PREFIX = "PDF_CONTENT_BASE64:"
+
+_DECLARED_TOOLS: tuple[str, ...] = (
+    "list_files",
+    "get_file_info",
+    "delete_file",
+    "upload_file",
+    "download_file",
+    "summarize_file",
+)
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _serialize_object(obj: ObjectInfo) -> dict[str, object]:
+    """Serialize an ObjectInfo to a JSON-friendly dict."""
+    return {
+        "object_name": obj.object_name,
+        "size_bytes": obj.size_bytes,
+        "data_type": obj.data_type,
+        "updated_at": obj.updated_at.isoformat() if obj.updated_at else None,
+    }
+
+
+def _missing_arg(arg_name: str) -> str:
+    """Format a user-facing 'missing required arg' error string."""
+    return f"Error: missing required arg '{arg_name}'"
+
+
+def _check_args(args: dict[str, Any], required: tuple[str, ...]) -> str | None:
+    """Return an error string for the first missing required arg, or None."""
+    for key in required:
+        if key not in args:
+            return _missing_arg(key)
+    return None
 
 
 # ============================================================================
@@ -39,24 +91,14 @@ def _list_files(
 ) -> str:
     """List files in a container.
 
-    Args:
-        storage: CloudStorageClient instance.
-        container: Container name.
-        prefix: Object name prefix for filtering.
-
-    Returns:
-        JSON-formatted string of ObjectInfo list.
+    Returns a JSON-formatted list of serialized ObjectInfo or an error string.
     """
-    objects = storage.list_files(container, prefix)
-    serialized = [
-        {
-            "object_name": obj.object_name,
-            "size_bytes": obj.size_bytes,
-            "data_type": obj.data_type,
-            "updated_at": obj.updated_at.isoformat() if obj.updated_at is not None else str(obj.updated_at),
-        }
-        for obj in objects
-    ]
+    try:
+        objects = storage.list_files(container, prefix)
+    except ContainerNotFoundError:
+        return f"Error: Container '{container}' not found."
+
+    serialized = [_serialize_object(obj) for obj in objects]
     return json.dumps(serialized, indent=2)
 
 
@@ -67,25 +109,13 @@ def _get_file_info(
 ) -> str:
     """Get metadata for a single file.
 
-    Args:
-        storage: CloudStorageClient instance.
-        container: Container name.
-        object_name: Object name.
-
-    Returns:
-        JSON-formatted ObjectInfo or error string.
+    Returns JSON of the ObjectInfo or an error string if missing.
     """
     try:
         obj = storage.get_file_info(container, object_name)
-        serialized = {
-            "object_name": obj.object_name,
-            "size_bytes": obj.size_bytes,
-            "data_type": obj.data_type,
-            "updated_at": obj.updated_at.isoformat() if obj.updated_at is not None else str(obj.updated_at),
-        }
-        return json.dumps(serialized, indent=2)
     except ObjectNotFoundError:
         return f"Error: Object '{object_name}' not found in container '{container}'."
+    return json.dumps(_serialize_object(obj), indent=2)
 
 
 def _delete_file(
@@ -95,20 +125,13 @@ def _delete_file(
 ) -> str:
     """Delete a file from a container.
 
-    Args:
-        storage: CloudStorageClient instance.
-        container: Container name.
-        object_name: Object name to delete.
-
-    Returns:
-        Confirmation string or error string.
+    Returns a confirmation string or an error string when not found.
     """
     try:
         storage.delete_file(container, object_name)
     except ObjectNotFoundError:
         return f"Error: Object '{object_name}' not found in container '{container}'."
-    else:
-        return f"Deleted {object_name} from {container}."
+    return f"Deleted {object_name} from {container}."
 
 
 def _upload_file(
@@ -119,21 +142,13 @@ def _upload_file(
 ) -> str:
     """Upload a file to a container.
 
-    Args:
-        storage: CloudStorageClient instance.
-        container: Container name.
-        local_path: Local file path.
-        remote_path: Remote object path.
-
-    Returns:
-        Confirmation string or error string.
+    Returns a confirmation string or an error string when the local file is unavailable.
     """
     try:
         obj_info = storage.upload_file(container, local_path, remote_path)
     except LocalFileAccessError:
         return f"Error: Cannot access local file '{local_path}'."
-    else:
-        return f"Uploaded {obj_info.object_name} ({obj_info.size_bytes} bytes) to {container}."
+    return f"Uploaded {obj_info.object_name} ({obj_info.size_bytes} bytes) to {container}."
 
 
 def _download_file(
@@ -142,23 +157,15 @@ def _download_file(
     object_name: str,
     file_name: str,
 ) -> str:
-    """Download a file from a container.
+    """Download a file from a container to a local path.
 
-    Args:
-        storage: CloudStorageClient instance.
-        container: Container name.
-        object_name: Object name to download.
-        file_name: Local destination path.
-
-    Returns:
-        Confirmation string or error string.
+    Returns confirmation or an error string if the object is missing.
     """
     try:
         storage.download_file(container, object_name, file_name)
     except ObjectNotFoundError:
         return f"Error: Object '{object_name}' not found in container '{container}'."
-    else:
-        return f"Downloaded {object_name} to {file_name}."
+    return f"Downloaded {object_name} to {file_name}."
 
 
 def _summarize_file(
@@ -166,48 +173,36 @@ def _summarize_file(
     container: str,
     object_name: str,
 ) -> str:
-    """Summarize file content or prepare for Gemini processing.
+    """Summarize file content or prepare it for Gemini processing.
 
-    Args:
-        storage: CloudStorageClient instance.
-        container: Container name.
-        object_name: Object name to summarize.
-
-    Returns:
-        Raw file content (text), base64-encoded content (PDF), error string, or unsupported message.
+    Returns raw text, a PDF base64 payload prefixed by PDF_CONTENT_BASE64:, an
+    error string, or a file-type-not-supported message.
     """
-    ext = "." + object_name.rsplit(".", maxsplit=1)[-1].lower() if "." in object_name else ""
-
-    # Check for supported types first
-    text_extensions = {".txt", ".md", ".csv", ".json", ".log", ".py", ".yaml", ".yml"}
-    if ext not in text_extensions and ext != ".pdf":
+    ext = Path(object_name).suffix.lower()
+    if ext not in _TEXT_EXTENSIONS and ext != _PDF_EXTENSION:
         return f"File type not supported for summarization: {ext}"
 
-    # Download to temp file and process
-    temp_path: str | None = None
+    # mkstemp avoids the open-then-reopen race on Windows
+    fd, temp_path = tempfile.mkstemp()
+    os.close(fd)
     try:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_path = temp_file.name
+        try:
+            storage.download_file(container, object_name, temp_path)
+        except ObjectNotFoundError:
+            return f"Error: Object '{object_name}' not found in container '{container}'."
 
-        storage.download_file(container, object_name, temp_path)
-
-        if ext == ".pdf":
-            # Read as bytes and base64-encode
+        if ext == _PDF_EXTENSION:
             pdf_bytes = Path(temp_path).read_bytes()
             encoded = base64.b64encode(pdf_bytes).decode("utf-8")
-            return f"PDF_CONTENT_BASE64:{encoded}"
+            return f"{_PDF_BASE64_PREFIX}{encoded}"
 
-        content = Path(temp_path).read_text(encoding="utf-8")
-
-    except ObjectNotFoundError:
-        return f"Error: Object '{object_name}' not found in container '{container}'."
-    else:
-        return content
+        try:
+            return Path(temp_path).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return f"Error: Could not decode '{object_name}' as UTF-8 text."
     finally:
-        # Always clean up temp file
-        if temp_path is not None:
-            with contextlib.suppress(OSError):
-                Path(temp_path).unlink()
+        with contextlib.suppress(OSError):
+            Path(temp_path).unlink()
 
 
 # ============================================================================
@@ -215,22 +210,19 @@ def _summarize_file(
 # ============================================================================
 
 
-def get_tool_declarations() -> list[Any]:
+def get_tool_declarations() -> list[genai_types.Tool]:
     """Get Gemini tool declarations.
 
-    Returns:
-        List of Tool protos for Gemini.
+    Returns a list of genai Tool protos used by the model configuration.
     """
-    if genai_types is None:
-        msg = "google.genai not installed"
-        raise ImportError(msg)
-
     return [
         genai_types.Tool(
             function_declarations=[
                 genai_types.FunctionDeclaration(
                     name="list_files",
-                    description="List files in a cloud storage container, optionally filtered by prefix.",
+                    description=(
+                        "List files in a cloud storage container, optionally filtered by prefix."
+                    ),
                     parameters=genai_types.Schema(
                         type=genai_types.Type.OBJECT,
                         properties={
@@ -240,7 +232,10 @@ def get_tool_declarations() -> list[Any]:
                             ),
                             "prefix": genai_types.Schema(
                                 type=genai_types.Type.STRING,
-                                description="Optional prefix to filter object names. Defaults to empty string.",
+                                description=(
+                                    "Optional prefix to filter object names. "
+                                    "Defaults to empty string."
+                                ),
                             ),
                         },
                         required=["container"],
@@ -352,7 +347,12 @@ def get_tool_declarations() -> list[Any]:
     ]
 
 
-def dispatch_tool_call(
+# ============================================================================
+# Dispatch
+# ============================================================================
+
+
+def dispatch_tool_call(  # noqa: C901, PLR0911
     name: str,
     args: dict[str, Any],
     storage: CloudStorageClient,
@@ -360,22 +360,57 @@ def dispatch_tool_call(
     """Dispatch a tool call to the appropriate function.
 
     Args:
-        name: Tool function name.
-        args: Arguments dict.
-        storage: CloudStorageClient instance.
+        name: Tool function name. Must be one of the declared tools.
+        args: Arguments dict from the model's function call.
+        storage: CloudStorageClient instance used by all tools.
 
     Returns:
-        String result from the tool.
-    """
-    dispatch_map: dict[str, Callable[[], str]] = {
-        "list_files": lambda: _list_files(storage, args["container"], args.get("prefix", "")),
-        "get_file_info": lambda: _get_file_info(storage, args["container"], args["object_name"]),
-        "delete_file": lambda: _delete_file(storage, args["container"], args["object_name"]),
-        "upload_file": lambda: _upload_file(storage, args["container"], args["local_path"], args["remote_path"]),
-        "download_file": lambda: _download_file(storage, args["container"], args["object_name"], args["file_name"]),
-        "summarize_file": lambda: _summarize_file(storage, args["container"], args["object_name"]),
-    }
+        String result from the tool. Errors that the model could plausibly
+        recover from are returned as "Error: ..." strings; programming
+        bugs (unknown tool name) raise ValueError.
 
-    if name in dispatch_map:
-        return dispatch_map[name]()
-    return f"Error: Unknown tool '{name}'."
+    Raises:
+        ValueError: If name is not a declared tool.
+    """
+    if name == "list_files":
+        if err := _check_args(args, ("container",)):
+            return err
+        return _list_files(storage, args["container"], args.get("prefix", ""))
+
+    if name == "get_file_info":
+        if err := _check_args(args, ("container", "object_name")):
+            return err
+        return _get_file_info(storage, args["container"], args["object_name"])
+
+    if name == "delete_file":
+        if err := _check_args(args, ("container", "object_name")):
+            return err
+        return _delete_file(storage, args["container"], args["object_name"])
+
+    if name == "upload_file":
+        if err := _check_args(args, ("container", "local_path", "remote_path")):
+            return err
+        return _upload_file(
+            storage,
+            args["container"],
+            args["local_path"],
+            args["remote_path"],
+        )
+
+    if name == "download_file":
+        if err := _check_args(args, ("container", "object_name", "file_name")):
+            return err
+        return _download_file(
+            storage,
+            args["container"],
+            args["object_name"],
+            args["file_name"],
+        )
+
+    if name == "summarize_file":
+        if err := _check_args(args, ("container", "object_name")):
+            return err
+        return _summarize_file(storage, args["container"], args["object_name"])
+
+    msg = f"Unknown tool: {name!r}. Declared tools: {sorted(_DECLARED_TOOLS)}"
+    raise ValueError(msg)

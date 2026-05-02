@@ -5,10 +5,11 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, NoReturn, cast
 
 from cloud_storage_api import CloudStorageClient, DeleteResult, ObjectInfo
 from cloud_storage_api.exceptions import (
@@ -21,55 +22,92 @@ from cloud_storage_api.exceptions import (
     ObjectNotFoundError,
     StorageBackendError,
 )
+from google.api_core import exceptions as google_exceptions
+from google.cloud import storage
+from google.oauth2 import credentials as oauth2_credentials
+from google.oauth2 import service_account
 
-try:
-    from google.api_core import exceptions as google_exceptions
-    from google.cloud import storage
-    from google.oauth2 import credentials as oauth2_credentials
-    from google.oauth2 import service_account
-except ImportError:  # pragma: no cover - handled by runtime guard
-    google_exceptions = None  # type: ignore[assignment]
-    storage = None
-    service_account = None  # type: ignore[assignment]
-    oauth2_credentials = None  # type: ignore[assignment]
+if TYPE_CHECKING:
+    from typing import BinaryIO
+
+    from google.auth.credentials import Credentials
+
+logger = logging.getLogger(__name__)
 
 
-def _map_provider_error(  # noqa: PLR0912
-    exc: Exception,
+# ============================================================================
+# Error mapping
+# ============================================================================
+
+
+def _raise_read_error(
+    exc: google_exceptions.GoogleAPIError,
+    *,
+    container: str,
+    object_name: str | None,
+) -> NoReturn:
+    """Map a provider error from a read/delete path and re-raise it.
+
+    Read/delete paths assume the bucket exists at the start of the call;
+    a 404 therefore points at the object, not the container.
+    """
+    if isinstance(exc, google_exceptions.Forbidden):
+        msg = "Access denied by cloud provider."
+        raise AuthenticationError(msg) from exc
+    if isinstance(exc, google_exceptions.Unauthorized):
+        msg = "Authentication failed or access denied by cloud provider."
+        raise AuthenticationError(msg) from exc
+    if isinstance(exc, google_exceptions.NotFound):
+        if object_name is not None:
+            msg = f"Object '{object_name}' not found in bucket '{container}'"
+            raise ObjectNotFoundError(msg) from exc
+        msg = f"Container '{container}' not found"
+        raise ContainerNotFoundError(msg) from exc
+    if isinstance(exc, google_exceptions.BadRequest):
+        if object_name is not None:
+            msg = f"Invalid object name '{object_name}'"
+            raise InvalidObjectNameError(msg) from exc
+        msg = f"Invalid container name '{container}'"
+        raise InvalidContainerError(msg) from exc
+
+    msg = f"Cloud storage backend operation failed: {exc}"
+    raise StorageBackendError(msg) from exc
+
+
+def _raise_write_error(
+    exc: google_exceptions.GoogleAPIError,
     *,
     container: str,
     object_name: str | None = None,
-    treat_not_found_as_container: bool = False,
-) -> Exception:
-    """Map provider-specific errors to shared cloud_storage_api exceptions."""
-    if google_exceptions is None:
-        return StorageBackendError(str(exc))
+) -> NoReturn:
+    """Map a provider error from a write path and re-raise it.
 
-    mapped: Exception
-
+    Write paths can't 404 the object (it's being created), so a 404 always
+    means the bucket is missing.
+    """
     if isinstance(exc, google_exceptions.Forbidden):
-        if treat_not_found_as_container:
-            mapped = ContainerNotFoundError(f"Container '{container}' not found or access denied")
-        else:
-            mapped = AuthenticationError("Access denied by cloud provider.")
-    elif isinstance(exc, google_exceptions.Unauthorized):
-        mapped = AuthenticationError("Authentication failed or access denied by cloud provider.")
-    elif isinstance(exc, google_exceptions.NotFound):
-        if treat_not_found_as_container:
-            mapped = ContainerNotFoundError(f"Container '{container}' not found")
-        elif object_name is not None:
-            mapped = ObjectNotFoundError(f"Object '{object_name}' not found in bucket '{container}'")
-        else:
-            mapped = ContainerNotFoundError(f"Container '{container}' not found")
-    elif isinstance(exc, google_exceptions.BadRequest):
+        msg = f"Container '{container}' not found or access denied"
+        raise ContainerNotFoundError(msg) from exc
+    if isinstance(exc, google_exceptions.Unauthorized):
+        msg = "Authentication failed or access denied by cloud provider."
+        raise AuthenticationError(msg) from exc
+    if isinstance(exc, google_exceptions.NotFound):
+        msg = f"Container '{container}' not found"
+        raise ContainerNotFoundError(msg) from exc
+    if isinstance(exc, google_exceptions.BadRequest):
         if object_name is not None:
-            mapped = InvalidObjectNameError(f"Invalid object name '{object_name}'")
-        else:
-            mapped = InvalidContainerError(f"Invalid container name '{container}'")
-    else:
-        mapped = StorageBackendError(f"Cloud storage backend operation failed: {exc}")
+            msg = f"Invalid object name '{object_name}'"
+            raise InvalidObjectNameError(msg) from exc
+        msg = f"Invalid container name '{container}'"
+        raise InvalidContainerError(msg) from exc
 
-    return mapped
+    msg = f"Cloud storage backend operation failed: {exc}"
+    raise StorageBackendError(msg) from exc
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
 
 
 @dataclass(frozen=True)
@@ -82,11 +120,17 @@ class GCPClientConfig:
     oauth_token: str | None
 
 
+# ============================================================================
+# Client
+# ============================================================================
+
+
 class GCPCloudStorageClient(CloudStorageClient):
-    """Cloud storage client implementation using Google Cloud Storage (GCS).
+    """Cloud storage client backed by Google Cloud Storage (GCS).
 
     Manages upload, download, deletion, and listing of objects in GCS buckets.
-    Supports authentication via service account credentials or default credentials.
+    Supports authentication via OAuth bearer token, service account JSON key,
+    service account file path, or application-default credentials.
     """
 
     def __init__(
@@ -94,48 +138,49 @@ class GCPCloudStorageClient(CloudStorageClient):
         *,
         project_id: str | None = None,
         credentials_path: str | None = None,
+        service_key: str | None = None,
         oauth_token: str | None = None,
     ) -> None:
         """Initialize the GCP Cloud Storage client.
 
         Args:
-            project_id: GCP project ID (defaults to GOOGLE_CLOUD_PROJECT env var).
-            credentials_path: Path to service account key file (defaults to GOOGLE_APPLICATION_CREDENTIALS env var).
-            oauth_token: OAuth 2.0 access token for user-delegated authentication.
-            Takes priority over service account credentials.
+            project_id: GCP project ID. Falls back to GOOGLE_CLOUD_PROJECT.
+            credentials_path: Path to a service-account JSON file. Falls back to
+                GOOGLE_APPLICATION_CREDENTIALS.
+            service_key: Inline service-account JSON, optionally base64-encoded.
+                Falls back to GCP_SERVICE_KEY.
+            oauth_token: OAuth 2.0 access token (bearer token only — caller is
+                responsible for token freshness). Falls back to GCP_OAUTH_TOKEN.
+                Takes priority over service-account credentials.
         """
         self._config = GCPClientConfig(
             project_id=project_id or os.getenv("GOOGLE_CLOUD_PROJECT"),
-            credentials_path=credentials_path or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-            service_key=os.getenv("GCP_SERVICE_KEY"),
+            credentials_path=(credentials_path or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+            service_key=service_key or os.getenv("GCP_SERVICE_KEY"),
             oauth_token=oauth_token or os.getenv("GCP_OAUTH_TOKEN"),
         )
-        self._storage_client: Any | None = None
+        self._storage_client: storage.Client | None = None
 
-    def _require_google_cloud_storage(self) -> None:
-        """Ensure google-cloud-storage is installed."""
-        if storage is None:
-            msg = "google-cloud-storage is not installed. Install dependencies first (for example: `uv sync`)."
-            raise StorageBackendError(msg)
+    # ========================================================================
+    # Credential plumbing
+    # ========================================================================
 
-    def _build_credentials(self) -> Any | None:
-        """Build GCP credentials from configured sources."""
+    def _build_credentials(self) -> Credentials | None:
+        """Build GCP credentials from configured sources, or None for ADC."""
         if self._config.oauth_token:
-            if oauth2_credentials is None:
-                msg = "google-auth is not installed, cannot build OAuth credentials."
-                raise StorageBackendError(msg)
-            return oauth2_credentials.Credentials(token=self._config.oauth_token)  # type: ignore[no-untyped-call]
+            # Bearer token only — caller is responsible for token freshness.
+            return cast(
+                "Credentials",
+                oauth2_credentials.Credentials(token=self._config.oauth_token),  # type: ignore[no-untyped-call]
+            )
 
         if self._config.credentials_path:
+            # Handled by storage.Client.from_service_account_json downstream.
             return None
 
         service_key = self._config.service_key
         if not service_key:
             return None
-
-        if service_account is None:
-            msg = "google-auth is not installed, so service-account credentials cannot be built."
-            raise StorageBackendError(msg)
 
         try:
             decoded = base64.b64decode(service_key, validate=True).decode("utf-8")
@@ -146,18 +191,25 @@ class GCPCloudStorageClient(CloudStorageClient):
         try:
             info = json.loads(payload)
         except json.JSONDecodeError as exc:
-            msg = "GCP_SERVICE_KEY must be a valid JSON string or base64-encoded JSON service account key."
+            msg = (
+                "GCP_SERVICE_KEY must be a valid JSON string or "
+                "base64-encoded JSON service account key."
+            )
             raise StorageBackendError(msg) from exc
 
-        return service_account.Credentials.from_service_account_info(info)  # type: ignore[no-untyped-call]
+        return cast(
+            "Credentials",
+            service_account.Credentials.from_service_account_info(info),  # type: ignore[no-untyped-call]
+        )
 
-    def _build_storage_client(self) -> Any:
-        """Build and return GCS client with configured credentials."""
-        self._require_google_cloud_storage()
-
+    def _build_storage_client(self) -> storage.Client:
+        """Build and return a GCS client with configured credentials."""
         credentials = self._build_credentials()
         if credentials is not None:
-            return storage.Client(project=self._config.project_id, credentials=credentials)
+            return storage.Client(
+                project=self._config.project_id,
+                credentials=credentials,
+            )
 
         if self._config.credentials_path:
             return storage.Client.from_service_account_json(
@@ -167,37 +219,41 @@ class GCPCloudStorageClient(CloudStorageClient):
 
         return storage.Client(project=self._config.project_id)
 
-    def _get_storage_client(self) -> Any:
-        """Get or lazily initialize the storage client."""
+    def _get_storage_client(self) -> storage.Client:
+        """Return the lazily-initialized storage client."""
         if self._storage_client is None:
             self._storage_client = self._build_storage_client()
         return self._storage_client
 
-    def _validate_container(self, container: str) -> None:
+    def _get_bucket(self, container: str) -> storage.Bucket:
+        """Get a bucket reference (does not perform an existence check)."""
+        return self._get_storage_client().bucket(container)
+
+    # ========================================================================
+    # Validation
+    # ========================================================================
+
+    @staticmethod
+    def _validate_container(container: str) -> None:
         """Validate container name is not empty."""
         if not container:
             msg = "Container name cannot be empty."
             raise InvalidContainerError(msg)
 
-    def _validate_object_name(self, object_name: str) -> None:
+    @staticmethod
+    def _validate_object_name(object_name: str) -> None:
         """Validate object name is not empty."""
         if not object_name:
             msg = "Object name cannot be empty."
             raise InvalidObjectNameError(msg)
 
-    def _get_bucket(self, container: str) -> Any:
-        """Get a bucket by name."""
-        return self._get_storage_client().bucket(container)
+    # ========================================================================
+    # Mapping helpers
+    # ========================================================================
 
-    def _blob_to_object_info(self, blob: Any) -> ObjectInfo:
-        """Convert GCS blob to ObjectInfo.
-
-        Args:
-            blob: GCS blob object from google.cloud.storage.
-
-        Returns:
-            ObjectInfo with metadata extracted from the blob.
-        """
+    @staticmethod
+    def _blob_to_object_info(blob: storage.Blob) -> ObjectInfo:
+        """Convert a GCS Blob to a shared ObjectInfo."""
         return ObjectInfo(
             object_name=blob.name,
             version_id=blob.generation,
@@ -210,13 +266,17 @@ class GCPCloudStorageClient(CloudStorageClient):
             metadata=blob.metadata or {},
         )
 
+    # ========================================================================
+    # Public API
+    # ========================================================================
+
     def upload_file(
         self,
         container: str,
         local_path: str,
         remote_path: str,
     ) -> ObjectInfo:
-        """Upload a file to cloud storage.
+        """Upload a local file to cloud storage.
 
         Args:
             container: GCS bucket name.
@@ -230,7 +290,9 @@ class GCPCloudStorageClient(CloudStorageClient):
             InvalidContainerError: If container is empty.
             InvalidObjectNameError: If remote_path is empty.
             LocalFileAccessError: If local_path cannot be read.
-            StorageBackendError: If the operation fails.
+            ContainerNotFoundError: If the bucket does not exist.
+            AuthenticationError: If credentials are invalid or denied.
+            StorageBackendError: For other backend failures.
         """
         self._validate_container(container)
         self._validate_object_name(remote_path)
@@ -241,18 +303,22 @@ class GCPCloudStorageClient(CloudStorageClient):
             msg = f"Cannot read local file '{local_path}'"
             raise LocalFileAccessError(msg) from exc
 
+        logger.debug(
+            "gcs.upload_file",
+            extra={
+                "container": container,
+                "remote_path": remote_path,
+                "size_bytes": len(data),
+            },
+        )
+
         bucket = self._get_bucket(container)
         blob = bucket.blob(remote_path)
         try:
             blob.upload_from_string(data)
             blob.reload()
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=None,
-                treat_not_found_as_container=False,
-            ) from exc
+        except google_exceptions.GoogleAPIError as exc:
+            _raise_write_error(exc, container=container, object_name=remote_path)
 
         return self._blob_to_object_info(blob)
 
@@ -261,13 +327,16 @@ class GCPCloudStorageClient(CloudStorageClient):
         container: str,
         file_obj: BinaryIO,
         remote_path: str,
+        content_type: str | None = None,
     ) -> ObjectInfo:
         """Upload a binary file-like object to cloud storage.
 
         Args:
             container: GCS bucket name.
-            file_obj: A file-like object opened in binary mode.
-            remote_path: Destination object key/path in cloud storage.
+            file_obj: Binary readable file-like object.
+            remote_path: Destination object key.
+            content_type: Optional MIME type. Pass explicitly to override the
+                SDK's automatic content-type detection.
 
         Returns:
             ObjectInfo with metadata about the uploaded object.
@@ -275,8 +344,10 @@ class GCPCloudStorageClient(CloudStorageClient):
         Raises:
             InvalidContainerError: If container is empty.
             InvalidObjectNameError: If remote_path is empty.
-            InvalidFileObjectError: If file_obj is not a valid binary readable.
-            StorageBackendError: If the operation fails.
+            InvalidFileObjectError: If file_obj is not readable.
+            ContainerNotFoundError: If the bucket does not exist.
+            AuthenticationError: If credentials are invalid or denied.
+            StorageBackendError: For other backend failures.
         """
         self._validate_container(container)
         self._validate_object_name(remote_path)
@@ -285,24 +356,27 @@ class GCPCloudStorageClient(CloudStorageClient):
             msg = "file_obj must be a file-like object with a read() method."
             raise InvalidFileObjectError(msg)
 
+        logger.debug(
+            "gcs.upload_obj",
+            extra={
+                "container": container,
+                "remote_path": remote_path,
+                "content_type": content_type,
+            },
+        )
+
+        bucket = self._get_bucket(container)
+        blob = bucket.blob(remote_path)
         try:
-            bucket = self._get_bucket(container)
-            blob = bucket.blob(remote_path)
-            raw_content_type = getattr(file_obj, "content_type", None)
-            detected_content_type = raw_content_type if isinstance(raw_content_type, str) else None
-            blob.upload_from_file(file_obj, content_type=detected_content_type)
+            blob.upload_from_file(file_obj, content_type=content_type)
             blob.reload()
-            return self._blob_to_object_info(blob)
         except (OSError, TypeError) as exc:
             msg = f"Failed to upload from file object: {exc}"
             raise InvalidFileObjectError(msg) from exc
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=remote_path,
-                treat_not_found_as_container=True,
-            ) from exc
+        except google_exceptions.GoogleAPIError as exc:
+            _raise_write_error(exc, container=container, object_name=remote_path)
+
+        return self._blob_to_object_info(blob)
 
     def download_file(
         self,
@@ -310,7 +384,7 @@ class GCPCloudStorageClient(CloudStorageClient):
         object_name: str,
         file_name: str,
     ) -> ObjectInfo:
-        """Download a file from cloud storage.
+        """Download an object to a local file.
 
         Args:
             container: GCS bucket name.
@@ -325,81 +399,71 @@ class GCPCloudStorageClient(CloudStorageClient):
             InvalidObjectNameError: If object_name is empty.
             LocalFileAccessError: If file_name cannot be written.
             ObjectNotFoundError: If the object does not exist.
-            StorageBackendError: If the operation fails.
+            ContainerNotFoundError: If the bucket does not exist.
+            StorageBackendError: For other backend failures.
         """
         self._validate_container(container)
         self._validate_object_name(object_name)
 
+        logger.debug(
+            "gcs.download_file",
+            extra={
+                "container": container,
+                "object_name": object_name,
+                "file_name": file_name,
+            },
+        )
+
         bucket = self._get_bucket(container)
         blob = bucket.blob(object_name)
 
-        try:
-            exists = blob.exists()
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=object_name,
-                treat_not_found_as_container=True,
-            ) from exc
-
-        if not exists:
-            msg = f"Object '{object_name}' not found in bucket '{container}'"
-            raise ObjectNotFoundError(msg)
-
+        # Single round-trip: try the download directly and let GCS surface
+        # a NotFound, which we then translate. Avoids the exists()->op race
+        # and saves a HEAD request.
         try:
             blob.download_to_filename(file_name)
+            blob.reload()
         except OSError as exc:
             msg = f"Cannot write to file '{file_name}': {exc}"
             raise LocalFileAccessError(msg) from exc
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=object_name,
-                treat_not_found_as_container=True,
-            ) from exc
-
-        try:
-            blob.reload()
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=object_name,
-                treat_not_found_as_container=True,
-            ) from exc
+        except google_exceptions.GoogleAPIError as exc:
+            _raise_read_error(exc, container=container, object_name=object_name)
 
         return self._blob_to_object_info(blob)
 
     def list_files(self, container: str, prefix: str) -> list[ObjectInfo]:
-        """List files in cloud storage.
+        """List objects in a container, filtered by prefix.
 
         Args:
             container: GCS bucket name.
             prefix: Prefix used to filter listed objects.
 
         Returns:
-            Metadata for the objects matching the prefix, sorted in ascending
-            lexicographic order by ``object_name``.
+            ObjectInfo entries sorted ascending by object_name.
 
         Raises:
             InvalidContainerError: If container is empty.
-            StorageBackendError: If the operation fails.
+            ContainerNotFoundError: If the bucket does not exist.
+            StorageBackendError: For other backend failures.
         """
         self._validate_container(container)
+
+        logger.debug(
+            "gcs.list_files",
+            extra={"container": container, "prefix": prefix},
+        )
 
         bucket = self._get_bucket(container)
         try:
             blobs = bucket.list_blobs(prefix=prefix)
             objects = [self._blob_to_object_info(blob) for blob in blobs]
-        except Exception as exc:
-            raise _map_provider_error(exc, container=container) from exc
+        except google_exceptions.GoogleAPIError as exc:
+            _raise_read_error(exc, container=container, object_name=None)
 
-        return sorted(objects, key=lambda object_info: object_info.object_name)
+        return sorted(objects, key=lambda info: info.object_name)
 
     def delete_file(self, container: str, object_name: str) -> DeleteResult:
-        """Delete a file from cloud storage.
+        """Delete an object from cloud storage.
 
         Args:
             container: GCS bucket name.
@@ -412,38 +476,32 @@ class GCPCloudStorageClient(CloudStorageClient):
             InvalidContainerError: If container is empty.
             InvalidObjectNameError: If object_name is empty.
             ObjectNotFoundError: If the object does not exist.
-            StorageBackendError: If the operation fails.
+            ContainerNotFoundError: If the bucket does not exist.
+            StorageBackendError: For other backend failures.
         """
         self._validate_container(container)
         self._validate_object_name(object_name)
 
+        logger.debug(
+            "gcs.delete_file",
+            extra={"container": container, "object_name": object_name},
+        )
+
         bucket = self._get_bucket(container)
         blob = bucket.blob(object_name)
 
+        # reload() before delete to capture generation; lets the SDK 404
+        # surface naturally instead of doing an exists() pre-check.
         try:
-            exists = blob.exists()
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=object_name,
-                treat_not_found_as_container=True,
-            ) from exc
-
-        if not exists:
-            msg = f"Object '{object_name}' not found in bucket '{container}'"
-            raise ObjectNotFoundError(msg)
+            blob.reload()
+        except google_exceptions.GoogleAPIError as exc:
+            _raise_read_error(exc, container=container, object_name=object_name)
 
         generation = blob.generation
         try:
             blob.delete()
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=object_name,
-                treat_not_found_as_container=True,
-            ) from exc
+        except google_exceptions.GoogleAPIError as exc:
+            _raise_read_error(exc, container=container, object_name=object_name)
 
         return {
             "deleted": True,
@@ -465,36 +523,23 @@ class GCPCloudStorageClient(CloudStorageClient):
             InvalidContainerError: If container is empty.
             InvalidObjectNameError: If object_name is empty.
             ObjectNotFoundError: If the object does not exist.
-            StorageBackendError: If the operation fails.
+            ContainerNotFoundError: If the bucket does not exist.
+            StorageBackendError: For other backend failures.
         """
         self._validate_container(container)
         self._validate_object_name(object_name)
+
+        logger.debug(
+            "gcs.get_file_info",
+            extra={"container": container, "object_name": object_name},
+        )
 
         bucket = self._get_bucket(container)
         blob = bucket.blob(object_name)
 
         try:
-            exists = blob.exists()
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=object_name,
-                treat_not_found_as_container=True,
-            ) from exc
-
-        if not exists:
-            msg = f"Object '{object_name}' not found in bucket '{container}'"
-            raise ObjectNotFoundError(msg)
-
-        try:
             blob.reload()
-        except Exception as exc:
-            raise _map_provider_error(
-                exc,
-                container=container,
-                object_name=object_name,
-                treat_not_found_as_container=True,
-            ) from exc
+        except google_exceptions.GoogleAPIError as exc:
+            _raise_read_error(exc, container=container, object_name=object_name)
 
         return self._blob_to_object_info(blob)

@@ -3,17 +3,23 @@ name = "ospsd-spring-26"
 version = "0.1.0"
 description = "Cloud Storage Client with GCP Implementation"
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "slack-sdk>=3.41.0",
-    "prometheus-client>=0.25.0",
-]
+requires-python = ">=3.12,<3.14"
+dependencies = []  # workspace shell — components carry their own runtime deps
 
-# ============================================
-# DEPENDENCY GROUPS
-# ============================================
+# ============================================================================
+# Dependency groups
+# ============================================================================
 [dependency-groups]
 dev = [
+    # Workspace + git deps (so uv sync resolves them at the root level)
+    "ai-client-api",
+    "chat-client-wrapper",
+    "cloud-storage-adapter",
+    "cloud-storage-api",
+    "cloud-storage-service",
+    "gcp-client-impl",
+    "gemini-ai-client-impl",
+    # Tooling
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.15",
     "mkdocstrings-python>=1.16.12",
@@ -21,24 +27,16 @@ dev = [
     "pymdown-extensions>=10.16.1",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
-    "pytest-mock>=3.10.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.12.7",
     "types-requests>=2.32.4.20250611",
     "google-api-python-client-stubs>=1.30.0",
     "openapi-python-client>=0.28.3",
-    "cloud-storage-api",
-    "gcp-client-impl",
-    "cloud-storage-service",
-    "cloud-storage-adapter",
-    "ai-client-api",
-    "gemini-ai-client-impl",
-    "chat-client-wrapper",
 ]
 
-# ============================================
-# UV WORKSPACE CONFIGURATION
-# ============================================
+# ============================================================================
+# uv workspace
+# ============================================================================
 [tool.uv.workspace]
 members = [
     "components/ai_client_api",
@@ -47,21 +45,25 @@ members = [
     "components/cloud_storage_service",
     "components/gcp_client_impl",
     "components/gemini_ai_client_impl",
+    "components/cloud_storage_service_api_client",
+
 ]
 
 [tool.uv.sources]
 cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
-chat-client-api = { git = "https://github.com/HarshithKoriRaj/Shared-API.git", tag = "v0.1.0" }
-gcp-client-impl = { workspace = true }
-cloud-storage-service = { workspace = true }
-cloud-storage-adapter = { workspace = true }
+chat-client-api = { git = "https://github.com/HarshithKoriRaj/Shared-API.git", rev = "ebb37e189065760f2090f1488d376485b7b56b20" }
 ai-client-api = { workspace = true }
-gemini-ai-client-impl = { workspace = true }
 chat-client-wrapper = { workspace = true }
+cloud-storage-adapter = { workspace = true }
+cloud-storage-service = { workspace = true }
+gcp-client-impl = { workspace = true }
+gemini-ai-client-impl = { workspace = true }
+cloud-storage-service-api-client = { workspace = true }
 
-# ============================================
-# RUFF CONFIGURATION
-# ============================================
+
+# ============================================================================
+# Ruff — hyper-strict linting
+# ============================================================================
 [tool.ruff]
 line-length = 130
 target-version = "py312"
@@ -73,14 +75,13 @@ exclude = [
 
 [tool.ruff.lint]
 select = ["ALL"]
-
 ignore = [
-    "D203",    # one-blank-line-before-class - Conflicts with D211
-    "D213",    # multi-line-summary-second-line - Conflicts with D212
-    "COM812",  # missing-trailing-comma - Conflicts with formatter
-    "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
+    "D203",    # one-blank-line-before-class (conflicts with D211)
+    "D213",    # multi-line-summary-second-line (conflicts with D212)
+    "COM812",  # missing-trailing-comma (conflicts with formatter)
+    "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
     "FAST002", # FastAPI dependency injection pattern - intentional
-    "B008",    # FastAPI dependency injection pattern - intentional
+    "B008",    # FastAPI Depends() in defaults - intentional
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -88,65 +89,67 @@ ignore = [
     "E402",     # imports after path bootstrap - intentional
     "BLE001",   # blind exception in sanity check - intentional
     "T201",     # print equivalent - sys.stdout.write for demo output
-    "F401",     # unused imports - DI registration triggers side effects
-    "TC002",    # CloudStorageClient needed at runtime for FastAPI dependency injection
 ]
 
 "tests/**/*.py" = [
-    "S101",     # assert - required for pytest
-    "D102",     # docstrings in methods - not required in tests
-    "D103",     # docstrings in functions - not required in tests
+    "S101",     # assert in tests is fine
+    "D102",     # docstrings in test methods - not required
+    "D103",     # docstrings in test functions - not required
     "ANN",      # annotations - less critical in tests
     "SLF001",   # private member access - OK for testing internals
     "INP001",   # implicit namespace - tests/ has no init.py
-    "S105",     # hardcoded password - test credentials are fine
-    "S106",     # hardcoded password - test credentials are fine
+    "S105",     # hardcoded "passwords" in tests are fixtures
+    "S106",     # hardcoded "secrets" in tests are fixtures
+    "S108",     # /tmp paths in tests are not security risks
+    "S603",     # subprocess call - test automation is intentional
     "ARG001",   # unused arg - pytest fixtures
     "ARG002",   # unused method arg - pytest fixtures
-    "ARG005",   # unused lambda arg - test mocks have required signatures
+    "ARG005",   # unused lambda arg - test mocks
     "TRY300",   # consider moving statement - test-specific patterns
     "BLE001",   # blind exception - acceptable in tests
     "PLC0415",  # import outside toplevel - OK in tests
+    "PLR0913",  # too many args - test helper functions
     "PLR2004",  # magic values - acceptable in tests
-    "PLW0108",  # lambda in tests - acceptable
+    "PLW0108",  # lambda - acceptable in tests
     "TC003",    # Generator needed at runtime for pytest fixtures
-    "F401",     # Can have unused imports in TYPE_CHECKING
-    "S603",     # subprocess call - test automation is intentional
+    "F401",     # unused imports - TYPE_CHECKING usage
+    "DTZ005",   # datetime without timezone - test mocks
+    "FURB162",  # timezone replacement - test code
 ]
 
 "components/**/tests/**/*.py" = [
-    "S101",     # assert - required for pytest
-    "D102",     # docstrings in methods - not required in tests
-    "D103",     # docstrings in functions - not required in tests
-    "ANN",      # annotations - less critical in tests
-    "SLF001",   # private member access - OK for testing internals
-    "INP001",   # implicit namespace - tests/ has no init.py
-    "S105",     # hardcoded password - test credentials are fine
-    "S106",     # hardcoded password - test credentials are fine
-    "ARG001",   # unused arg - pytest fixtures
-    "ARG002",   # unused method arg - pytest fixtures
-    "ARG005",   # unused lambda arg - test mocks have required signatures
-    "TRY300",   # consider moving statement - test-specific patterns
-    "BLE001",   # blind exception - acceptable in tests
-    "PLC0415",  # import outside toplevel - OK in tests
-    "PLR2004",  # magic values - acceptable in tests
-    "PLW0108",  # lambda in tests - acceptable
-    "TC003",    # Generator needed at runtime for pytest fixtures
-    "F401",     # Can have unused imports in TYPE_CHECKING
-    "DTZ005",   # datetime without timezone - test mocks
-    "FURB162",  # timezone replacement - test code
-    "S603",     # subprocess call - test automation is intentional
-    "S108",     # insecure temp files - test fixtures are fine
-    "PLR0913",  # too many args - test helper functions
+    "S101",
+    "D102",
+    "D103",
+    "ANN",
+    "SLF001",
+    "INP001",
+    "S105",
+    "S106",
+    "S108",
+    "S603",
+    "ARG001",
+    "ARG002",
+    "ARG005",
+    "TRY300",
+    "BLE001",
+    "PLC0415",
+    "PLR0913",
+    "PLR2004",
+    "PLW0108",
+    "TC003",
+    "F401",
+    "DTZ005",
+    "FURB162",
 ]
 
 "**/gcp_client_impl/**/*.py" = [
-    "ANN401",   # Any typing - necessary for external Google Cloud library objects without complete stubs
+    "ANN401",   # Any typing - external Google Cloud library objects without complete stubs
 ]
 
 "**/cloud_storage_service/**/*.py" = [
-    "ANN401",   # Any typing - necessary for FastAPI request/response objects
-    "PLC0415",  # import inside function - intentional for performance/circular imports
+    "ANN401",   # Any typing - FastAPI request/response objects
+    "PLC0415",  # import inside function - intentional for circular-import avoidance
     "E402",     # module import not at top - intentional after env setup
     "S105",     # possible hardcoded password - false positive for URLs/constants
     "ARG001",   # unused function argument - FastAPI exception handler signature
@@ -159,9 +162,9 @@ ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-# ============================================
-# MYPY CONFIGURATION
-# ============================================
+# ============================================================================
+# MyPy — strict mode
+# ============================================================================
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -171,46 +174,53 @@ ignore_missing_imports = false
 exclude = [
     "components/cloud_storage_service_api_client/.*",
 ]
-
-# Paths where mypy should look for packages
 mypy_path = [
-    "components/gcp_client_impl/src",
+    "components/ai_client_api/src",
+    "components/chat_client_wrapper/src",
+    "components/cloud_storage_adapter/src",
     "components/cloud_storage_service/src",
     "components/cloud_storage_service_api_client",
-    "components/cloud_storage_adapter/src",
-    "components/ai_client_api/src",
+    "components/gcp_client_impl/src",
     "components/gemini_ai_client_impl/src",
-    "components/chat_client_wrapper/src",
 ]
 
-# Google Cloud libraries: google-api-python-client-stubs is installed for googleapiclient
-# Override for google.cloud.* and google.auth.* which may have incomplete stubs
 [[tool.mypy.overrides]]
 module = [
     "google.cloud.*",
     "google.auth.*",
     "google.oauth2.*",
+    "google.api_core.*",
+    "google.genai",
+    "google.genai.*",
 ]
 ignore_missing_imports = true
 
-# Pytest fixtures don't have type hints
-[[tool.mypy.overrides]]
-module = ["tests.*", "components.*.tests.*"]
-disallow_untyped_decorators = false
-
-# Auto-generated client: openapi-python-client output has incomplete type annotations
-[[tool.mypy.overrides]]
-module = ["cloud_storage_service_api_client.*", "components.cloud_storage_service_api_client.*"]
-ignore_errors = true
-
-# External chat-client-api from Shared-API repo: no type stubs available
 [[tool.mypy.overrides]]
 module = ["chat_client_api", "chat_client_api.*"]
 ignore_missing_imports = true
 
-# Files that import chat_client_api: covered by ignore_missing_imports above
+[[tool.mypy.overrides]]
+module = ["slack_sdk", "slack_sdk.*"]
+ignore_missing_imports = true
 
-# slack_adapter: allows subclassing ChatClient (which becomes Any due to ignore_missing_imports)
+[[tool.mypy.overrides]]
+module = ["prometheus_client", "prometheus_client.*"]
+ignore_missing_imports = true
+
+# Pytest fixtures don't require typed decorators
+[[tool.mypy.overrides]]
+module = ["tests.*", "components.*.tests.*"]
+disallow_untyped_decorators = false
+
+# Auto-generated OpenAPI client: incomplete type annotations
+[[tool.mypy.overrides]]
+module = [
+    "cloud_storage_service_api_client.*",
+    "components.cloud_storage_service_api_client.*",
+]
+ignore_errors = true
+
+# slack_adapter subclasses ChatClient (which becomes Any due to ignore_missing_imports above)
 [[tool.mypy.overrides]]
 module = [
     "cloud_storage_service.slack_adapter",
@@ -218,10 +228,12 @@ module = [
 ]
 disallow_subclassing_any = false
 
-# ============================================
-# PYTEST CONFIGURATION
-# ============================================
+# ============================================================================
+# Pytest
+# ============================================================================
 [tool.pytest.ini_options]
+minversion = "8.0"
+asyncio_mode = "auto"
 pythonpath = [
     ".",
     "components/ai_client_api/src",
@@ -236,14 +248,17 @@ testpaths = ["tests/e2e", "tests/integration", "components/*/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-
 addopts = [
-    "--verbose",
     "--strict-markers",
     "--strict-config",
+    "-ra",
+    "--tb=short",
     "--cov=components/ai_client_api/src/",
-    "--cov=components/gemini_ai_client_impl/src/",
     "--cov=components/chat_client_wrapper/src/",
+    "--cov=components/cloud_storage_adapter/src/",
+    "--cov=components/cloud_storage_service/src/",
+    "--cov=components/gcp_client_impl/src/",
+    "--cov=components/gemini_ai_client_impl/src/",
     "--cov-report=term-missing",
 ]
 
@@ -256,16 +271,19 @@ markers = [
     "local_credentials: Tests requiring a local service account key file",
 ]
 
-# ============================================
-# COVERAGE CONFIGURATION
-# ============================================
+# ============================================================================
+# Coverage
+# ============================================================================
 [tool.coverage.run]
+branch = true
 source = [
     "components/ai_client_api/src",
-    "components/gemini_ai_client_impl/src",
     "components/chat_client_wrapper/src",
+    "components/cloud_storage_adapter/src",
+    "components/cloud_storage_service/src",
+    "components/gcp_client_impl/src",
+    "components/gemini_ai_client_impl/src",
 ]
-branch = true
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -275,6 +293,8 @@ omit = [
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
+skip_covered = false
+precision = 2
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -286,7 +306,7 @@ exclude_lines = [
     "@abstractmethod",
 ]
 omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
     "components/cloud_storage_service_api_client/**/*",
 ]
-skip_covered = false
-precision = 2

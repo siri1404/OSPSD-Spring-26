@@ -2,62 +2,118 @@
 
 from __future__ import annotations
 
-import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
-from cloud_storage_service.auth import AuthConfig, build_oauth_url, exchange_code_for_token, get_auth_config, verify_token
+from cloud_storage_service.auth import (
+    AuthConfig,
+    exchange_code_for_token,
+    get_auth_config,
+    verify_token,
+)
 from fastapi.security import HTTPAuthorizationCredentials
+from httpx import ASGITransport, AsyncClient
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
 
+# ---------------------------------------------------------------------------
+# /auth/login
+# ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
-def test_login_endpoint_returns_200(client: TestClient) -> None:
-    """Test that login endpoint returns auth_url payload."""
+def test_login_endpoint_returns_auth_url_with_required_params(
+    client: TestClient,
+) -> None:
+    """/auth/login returns a Google authorization URL with all OAuth params."""
     response = client.post("/auth/login")
+
     assert response.status_code == 200
-
-
-@pytest.mark.unit
-def test_login_endpoint_returns_auth_url(client: TestClient) -> None:
-    """Test that login endpoint returns OAuth authorization URL."""
-    response = client.post("/auth/login")
     auth_url = response.json()["auth_url"]
-
-    assert isinstance(auth_url, str)
     assert auth_url.startswith("https://accounts.google.com/o/oauth2/v2/auth")
-
-
-@pytest.mark.unit
-def test_login_endpoint_auth_url_contains_required_params(client: TestClient) -> None:
-    """Test that auth URL contains required OAuth parameters."""
-    response = client.post("/auth/login")
-    auth_url = response.json()["auth_url"]
-
-    # Check for required OAuth parameters
-    assert "client_id=" in auth_url
-    assert "redirect_uri=" in auth_url
-    assert "response_type=code" in auth_url
-    assert "scope=" in auth_url
-    assert "state=" in auth_url
+    for required in (
+        "client_id=",
+        "redirect_uri=",
+        "response_type=code",
+        "scope=",
+        "state=",
+    ):
+        assert required in auth_url
 
 
 @pytest.mark.unit
 def test_login_endpoint_includes_storage_scopes(client: TestClient) -> None:
-    """Test that auth URL includes GCS storage scopes."""
+    """/auth/login includes GCS storage scopes."""
     response = client.post("/auth/login")
     auth_url = response.json()["auth_url"]
-
-    # Check for storage scopes
     assert "devstorage.read_write" in auth_url or "cloud-platform" in auth_url
 
 
+# ---------------------------------------------------------------------------
+# /auth/callback
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.unit
-def test_get_auth_config_returns_config_when_env_is_present(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test the helper returns a validated config from the environment."""
+@pytest.mark.asyncio
+async def test_callback_with_valid_code_returns_opaque_session_token() -> None:
+    """/auth/callback exchanges code for token and returns an opaque session ID."""
+    from cloud_storage_service.main import app
+
+    mock_token_data = {
+        "access_token": "test-provider-token",
+        "token_type": "bearer",
+        "expires_in": 3600,
+    }
+
+    with patch(
+        "cloud_storage_service.main.exchange_code_for_token",
+        new=AsyncMock(return_value=mock_token_data),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as async_client:
+            login_response = await async_client.post("/auth/login")
+            auth_url = login_response.json()["auth_url"]
+
+            params = parse_qs(urlparse(auth_url).query)
+            state = params["state"][0]
+
+            callback_response = await async_client.get(f"/auth/callback?code=test-code&state={state}")
+
+            assert callback_response.status_code == 200
+            data = callback_response.json()
+            # Opaque session ID, NOT the provider token.
+            assert data["access_token"] != "test-provider-token"
+            assert len(data["access_token"]) >= 32
+            assert data["token_type"] == "bearer"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_callback_with_invalid_state_returns_400() -> None:
+    """/auth/callback rejects callbacks with an unknown state (CSRF protection)."""
+    from cloud_storage_service.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as async_client:
+        response = await async_client.get("/auth/callback?code=test-code&state=invalid-state")
+
+        assert response.status_code == 400
+        detail = response.json()["detail"].lower()
+        assert "state" in detail or "csrf" in detail
+
+
+# ---------------------------------------------------------------------------
+# AuthConfig and OAuth helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_get_auth_config_returns_config_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """get_auth_config builds AuthConfig from environment variables."""
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-id")
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "client-secret")
     monkeypatch.setenv("GOOGLE_OAUTH_REDIRECT_URI", "https://example.com/callback")
@@ -71,27 +127,29 @@ def test_get_auth_config_returns_config_when_env_is_present(monkeypatch: pytest.
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_exchange_code_for_token_returns_token_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test the OAuth code exchange helper against a mocked HTTP response."""
-    config = AuthConfig()
-    config.client_id = "client-id"
-    config.client_secret = "client-secret"
-    config.redirect_uri = "https://example.com/callback"
-
+async def test_exchange_code_for_token_returns_token_payload() -> None:
+    """exchange_code_for_token POSTs to Google and returns the parsed JSON."""
+    config = AuthConfig(
+        client_id="client-id",
+        client_secret="client-secret",
+        redirect_uri="https://example.com/callback",
+        scopes=("https://www.googleapis.com/auth/devstorage.read_write",),
+    )
     token_data = {"access_token": "provider-token", "expires_in": 3600}
+
+    captured: dict[str, Any] = {}
 
     response = MagicMock()
     response.raise_for_status = MagicMock()
     response.json = MagicMock(return_value=token_data)
 
-    async def _fake_post(url: str, data: object) -> object:
-        assert url == "https://oauth2.googleapis.com/token"
-        assert isinstance(data, dict)
-        assert data["code"] == "auth-code"
+    async def fake_post(url: str, data: dict[str, str]) -> MagicMock:
+        captured["url"] = url
+        captured["data"] = data
         return response
 
     fake_client = AsyncMock()
-    fake_client.post = AsyncMock(side_effect=_fake_post)
+    fake_client.post = AsyncMock(side_effect=fake_post)
     fake_client.__aenter__.return_value = fake_client
     fake_client.__aexit__.return_value = False
 
@@ -99,32 +157,52 @@ async def test_exchange_code_for_token_returns_token_payload(monkeypatch: pytest
         result = await exchange_code_for_token("auth-code", config)
 
     assert result == token_data
+    assert captured["url"] == "https://oauth2.googleapis.com/token"
+    assert captured["data"]["code"] == "auth-code"
+
+
+# ---------------------------------------------------------------------------
+# verify_token
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_verify_token_resolves_service_session_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test service-owned session tokens resolve to provider tokens."""
+async def test_verify_token_resolves_session_token_to_provider_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session token in active_sessions is resolved to its provider token."""
     from cloud_storage_service.sessions import active_sessions
-
-    active_sessions.clear()
-    active_sessions["session-token"] = "provider-token"
 
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.delenv("DEV_AUTH_TOKEN", raising=False)
+    active_sessions["session-token"] = "provider-token"
 
-    try:
-        token = await verify_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="session-token"))
-    finally:
-        active_sessions.clear()
+    token = await verify_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="session-token"))
 
     assert token == "provider-token"
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_verify_token_rejects_empty_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that an empty bearer token is rejected by the helper."""
+async def test_verify_token_dev_path_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dev token in development/test environment returns None (ADC fallback)."""
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("DEV_AUTH_TOKEN", "dev-token-12345")
+
+    token = await verify_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="dev-token-12345"))
+
+    assert token is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_verify_token_rejects_empty_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty bearer token raises 401 with 'Missing authentication token'."""
     from fastapi import HTTPException
 
     monkeypatch.setenv("ENVIRONMENT", "production")
@@ -134,91 +212,33 @@ async def test_verify_token_rejects_empty_token(monkeypatch: pytest.MonkeyPatch)
         await verify_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials=""))
 
 
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_callback_endpoint_with_valid_code() -> None:
-    """Test OAuth callback with valid authorization code."""
-    from cloud_storage_service.main import app
-    from httpx import ASGITransport, AsyncClient
-
-    # Mock the token exchange
-    mock_token_data = {
-        "access_token": "test-access-token",
-        "token_type": "bearer",
-        "expires_in": 3600,
-    }
-
-    with patch("cloud_storage_service.main.exchange_code_for_token", new=AsyncMock(return_value=mock_token_data)):
-        # First, get a state parameter from login
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            login_response = await ac.post("/auth/login")
-            auth_url = login_response.json()["auth_url"]
-
-            # Extract state from auth_url
-            import urllib.parse
-
-            parsed = urllib.parse.urlparse(auth_url)
-            params = urllib.parse.parse_qs(parsed.query)
-            state = params["state"][0]
-
-            # Now test callback
-            callback_response = await ac.get(f"/auth/callback?code=test-code&state={state}")
-
-            assert callback_response.status_code == 200
-            callback_data = callback_response.json()
-
-            assert "access_token" in callback_data
-            # Verify it's a different token than the provider token (should be opaque session token)
-            assert callback_data["access_token"] != "test-access-token"
-            # Verify it's a valid opaque token (not empty, reasonable length)
-            assert len(callback_data["access_token"]) > 20
-            assert callback_data["token_type"] == "bearer"
+# ---------------------------------------------------------------------------
+# Auth integration via the /list endpoint
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_callback_endpoint_with_invalid_state() -> None:
-    """Test OAuth callback with invalid state parameter."""
-    from cloud_storage_service.main import app
-    from httpx import ASGITransport, AsyncClient
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        # Try callback with invalid state
-        response = await ac.get("/auth/callback?code=test-code&state=invalid-state")
-
-        assert response.status_code == 400
-        data = response.json()
-        assert "detail" in data
-        assert "state" in data["detail"].lower() or "CSRF" in data["detail"]
-
-
-@pytest.mark.unit
-def test_dev_token_authentication(client: TestClient, mock_storage_client: MagicMock) -> None:
-    """Test that dev token works for authentication."""
-    # Try accessing a protected endpoint with dev token
+def test_dev_token_authorizes_protected_endpoint(client: TestClient, mock_storage_client: MagicMock) -> None:
+    """Dev token authorizes a request to a protected endpoint."""
     headers = {"Authorization": "Bearer dev-token-12345"}
     response = client.get("/list", headers=headers)
 
-    # Dev token should authorize the request and reach the storage layer.
     assert response.status_code == 200
     mock_storage_client.list_files.assert_called_once_with(container="test-bucket", prefix="")
 
 
 @pytest.mark.unit
 def test_missing_token_returns_401(client: TestClient) -> None:
-    """Test that missing token returns 401 Unauthorized."""
-    # Try accessing protected endpoint without token
+    """A request without a bearer token is rejected with 401."""
     response = client.get("/list")
-
-    assert response.status_code == 401  # Returns 401 for missing auth
+    assert response.status_code == 401
 
 
 @pytest.mark.unit
 def test_invalid_token_returns_401(client: TestClient) -> None:
-    """Test that invalid token returns 401 Unauthorized."""
+    """An unrecognized bearer token is rejected with 401."""
     headers = {"Authorization": "Bearer invalid-token-xyz"}
     response = client.get("/list", headers=headers)
 
     assert response.status_code == 401
-    data = response.json()
-    assert "detail" in data
+    assert "detail" in response.json()

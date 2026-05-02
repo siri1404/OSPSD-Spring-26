@@ -1,13 +1,12 @@
 # main.tf — Render infrastructure
 #
-# Provisions three services on Render using the official render-oss/render
-# provider:
-#   - render_web_service.cloud_storage     → FastAPI app (public)
-#   - render_web_service.prometheus    → Prometheus scraper (private)
-#   - render_web_service.grafana           → Grafana dashboards (public)
+# Provisions three services on Render via the render-oss/render provider:
+#   - render_web_service.cloud_storage  → FastAPI app (public)
+#   - render_web_service.prometheus     → Prometheus scraper
+#   - render_web_service.grafana        → Grafana dashboards
 #
-# Keep this file in sync with ../render.yaml. The YAML blueprint is for
-# manual Render dashboard imports; this Terraform is what CI runs.
+# CI must attach the `render-deploy` context to `terraform apply` so all
+# `TF_VAR_*` env vars resolve. Variables are declared in variables.tf.
 
 terraform {
   required_version = ">= 1.6"
@@ -19,9 +18,9 @@ terraform {
     }
   }
 
-  # Local backend for the course project. For real production, switch this to
-  # a remote backend (Terraform Cloud / S3+DynamoDB / GCS) so state can be
-  # shared across CI runs.
+  # Local backend for the course project. For production, migrate to a remote
+  # backend (Terraform Cloud / S3+DynamoDB / GCS) so state can be shared
+  # across CI runs.
   backend "local" {
     path = "terraform.tfstate"
   }
@@ -29,19 +28,19 @@ terraform {
 
 provider "render" {
   # api_key and owner_id are read from RENDER_API_KEY and RENDER_OWNER_ID
-  # environment variables. CI injects them from the render-deploy context.
+  # environment variables, injected by the render-deploy CircleCI context.
   wait_for_deploy_completion = true
 }
 
+# ============================================================================
 # Cloud Storage FastAPI service
+# ============================================================================
 resource "render_web_service" "cloud_storage" {
   name              = "cloud-storage-service"
   plan              = "free"
   region            = var.RENDER_REGION
   health_check_path = "/health"
-  lifecycle {
-    ignore_changes = all
-  }
+
   runtime_source = {
     docker = {
       auto_deploy     = true
@@ -54,6 +53,7 @@ resource "render_web_service" "cloud_storage" {
 
   env_vars = {
     PORT                       = { value = "8000" }
+    ENVIRONMENT                = { value = "production" }
     GCP_SERVICE_KEY            = { value = var.GCP_SERVICE_KEY }
     GCS_BUCKET_NAME            = { value = var.GCS_BUCKET_NAME }
     GOOGLE_CLOUD_PROJECT       = { value = var.GOOGLE_CLOUD_PROJECT }
@@ -61,16 +61,21 @@ resource "render_web_service" "cloud_storage" {
     GOOGLE_OAUTH_CLIENT_SECRET = { value = var.GOOGLE_OAUTH_CLIENT_SECRET }
     GOOGLE_OAUTH_REDIRECT_URI  = { value = var.GOOGLE_OAUTH_REDIRECT_URI }
     GEMINI_API_KEY             = { value = var.GEMINI_API_KEY }
-    CHAT_API_KEY               = { value = var.SLACK_BOT_TOKEN }
-    CHAT_CHANNEL_ID            = { value = var.CHAT_CHANNEL_ID }
+    # Peer review #3: env var must be SLACK_BOT_TOKEN (not CHAT_API_KEY) so
+    # slack_adapter.py's os.getenv("SLACK_BOT_TOKEN") resolves correctly.
+    SLACK_BOT_TOKEN = { value = var.SLACK_BOT_TOKEN }
+    CHAT_CHANNEL_ID = { value = var.CHAT_CHANNEL_ID }
   }
 }
 
+# ============================================================================
 # Prometheus — scrapes /metrics from the cloud_storage service
+# ============================================================================
 resource "render_web_service" "prometheus" {
-  name   = "prometheus"
-  plan   = "free"
-  region = var.RENDER_REGION
+  name              = "team6-prometheus"
+  plan              = "free"
+  region            = var.RENDER_REGION
+  health_check_path = "/-/healthy"
 
   runtime_source = {
     docker = {
@@ -83,16 +88,18 @@ resource "render_web_service" "prometheus" {
   }
 
   env_vars = {
-    PROMETHEUS_SCRAPE_TARGET = { value = "cloud-storage-service-mcni.onrender.com" }
+    # Use the Render-internal service name; resolved within the team network.
+    PROMETHEUS_SCRAPE_TARGET = { value = "cloud-storage-service:8000" }
   }
 
-  # Prometheus is deployed after the app so it has a target to scrape.
   depends_on = [render_web_service.cloud_storage]
 }
 
+# ============================================================================
 # Grafana — dashboards on top of Prometheus
+# ============================================================================
 resource "render_web_service" "grafana" {
-  name              = "grafana"
+  name              = "team6-grafana"
   plan              = "free"
   region            = var.RENDER_REGION
   health_check_path = "/api/health"
@@ -113,7 +120,7 @@ resource "render_web_service" "grafana" {
     GF_SERVER_HTTP_PORT        = { value = "3000" }
     # Points Grafana at the Prometheus private service by its Render name.
     # Render resolves http://prometheus:9090 within the team network.
-    GF_DATASOURCE_PROMETHEUS_URL = { value = "http://prometheus:9090" }
+    GF_DATASOURCE_PROMETHEUS_URL = { value = "http://team6-prometheus:9090" }
   }
 
   depends_on = [render_web_service.prometheus]

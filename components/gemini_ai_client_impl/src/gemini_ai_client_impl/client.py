@@ -1,14 +1,21 @@
-"""Gemini AI client implementation with tool calling."""
+"""Gemini AI client implementation with tool calling.
+
+This module provides a small, well-typed Gemini client that performs
+tool-calling for cloud storage operations and returns either the final
+assistant text (public HW-3 contract) or, when requested, the full
+tool-call telemetry via `send_message_with_metadata`.
+"""
 
 from __future__ import annotations
 
 import base64
 import binascii
+import logging
 import os
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, cast
 
 from ai_client_api import AiClientApi, AIResponse
-from cloud_storage_api import CloudStorageClient  # noqa: TC002
 from cloud_storage_api.exceptions import (
     AuthenticationError,
     ContainerNotFoundError,
@@ -19,244 +26,269 @@ from cloud_storage_api.exceptions import (
     ObjectNotFoundError,
     StorageBackendError,
 )
-
-try:
-    from google import genai
-    from google.genai import types as genai_types
-except ImportError:
-    genai = None  # type: ignore[assignment]
-    genai_types = None  # type: ignore[assignment]
+from google import genai
+from google.genai import types as genai_types
 
 from gemini_ai_client_impl.tools import dispatch_tool_call, get_tool_declarations
+
+if TYPE_CHECKING:
+    from cloud_storage_api import CloudStorageClient
+
+
+# Sentinel prefix used by tools to signal PDF payloads encoded as base64.
+_PDF_BASE64_PREFIX = "PDF_CONTENT_BASE64:"
+
+
+@dataclass(frozen=True)
+class _ToolPayload:
+    """Normalized tool result: either text or a decoded PDF blob."""
+
+    text: str | None = None
+    pdf_bytes: bytes | None = None
 
 
 class GeminiAiClient(AiClientApi):
     """Gemini AI client with tool calling for cloud storage operations."""
 
+    MAX_TOOL_ITERATIONS: int = 10
+
     def __init__(
         self,
         storage_client: CloudStorageClient,
         api_key: str | None = None,
-        # Updated to Gemini 2.5 Flash (2026 supported model)
         model_name: str = "gemini-2.5-flash",
     ) -> None:
-        """Initialize Gemini AI client.
+        """Initialize Gemini AI client with storage and model configuration.
 
         Args:
-            storage_client: CloudStorageClient instance for tool operations.
-            api_key: Gemini API key (defaults to GEMINI_API_KEY env var).
-            model_name: Gemini model name to use.
+            storage_client: CloudStorageClient for tool execution.
+            api_key: Gemini API key. Falls back to GEMINI_API_KEY env var.
+            model_name: Gemini model identifier (default: gemini-2.5-flash).
 
         Raises:
-            ValueError: If API key is not provided and GEMINI_API_KEY is not set.
+            ValueError: If GEMINI_API_KEY is not available.
         """
-        if genai is None:
-            msg = "google-generativeai is not installed. Install it with: uv sync"
-            raise ImportError(msg)
-
         self._storage_client = storage_client
         self._model_name = model_name
-
-        # Get API key
-        if api_key is None:
-            api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
+        resolved_key = api_key if api_key is not None else os.environ.get("GEMINI_API_KEY")
+        if not resolved_key:
             msg = "GEMINI_API_KEY must be provided or set in environment variables."
             raise ValueError(msg)
 
-        self._genai_client = genai.Client(api_key=api_key, vertexai=True)
+        # Use AI Studio client.
+        self._genai_client = genai.Client(api_key=resolved_key)
 
-    def _extract_final_text(self, response: Any) -> str:  # noqa: ANN401
-        """Extract final text response from Gemini response.
-
-        Args:
-            response: Gemini response object.
-
-        Returns:
-            Extracted text or default message.
-        """
-        if response.text:
-            return cast("str", response.text)
-        return "No response generated."
-
-    def send_message(  # noqa: C901, PLR0912, PLR0915
-        self,
-        prompt: str,
-        context: dict[str, Any] | None = None,
-    ) -> AIResponse:
-        """Send a prompt to Gemini and handle tool calling.
-
-        Args:
-            prompt: User's natural language request.
-            context: Optional context dict (e.g., {"container": "my-bucket"}).
-
-        Returns:
-            AIResponse containing text, action_taken, and tool_calls list.
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def send_message(self, prompt: str, context: dict[str, object] | None = None) -> str:
+        """Return the assistant's final text response (HW-3 shared contract).
 
         Raises:
-            RuntimeError: If cloud storage operations fail.
+            ValueError: If context is malformed.
+            RuntimeError: If a storage tool fails or a payload is invalid.
         """
-        if genai is None:
-            msg = "google-genai not available"
-            raise ImportError(msg)
+        final_text, _, _, _ = self._run_send_message(prompt, context)
+        return final_text
 
-        # Validate context schema (ensure non-empty container when provided)
-        if context and "container" in context and (not isinstance(context["container"], str) or not context["container"].strip()):
-            msg = "context['container'] must be a non-empty string"
-            raise ValueError(msg)
+    def send_message_with_metadata(
+        self, prompt: str, context: dict[str, object] | None = None
+    ) -> AIResponse:
+        """Return final text plus tool-call telemetry for callers that need it.
 
-        config = genai_types.GenerateContentConfig(
-            tools=get_tool_declarations(),
-            system_instruction=(
-                "You are a cloud storage assistant, not a general conversational chatbot. "
-                "Use the provided tools to fulfill storage-related requests. "
-                "If a container is provided in context, treat it as authoritative and never ask for it again. "
-                "Do not ask clarifying questions when the container is already provided. "
-                "Return only relevant storage results, with concise bullet lists or JSON-style formatting when useful. "
-                "Avoid conversational filler and extra commentary."
-            ),
-        )
-
-        chat = self._genai_client.chats.create(
-            model=self._model_name,
-            config=config,
-        )
-        if context and "container" in context:
-            prompt = (
-                f"Container: {context['container']}\n"
-                f"Request: {prompt}\n"
-                "Respond concisely. Use the provided container directly. "
-                "Do not ask for clarification or repeat the container name unless it is needed for the result. "
-                "Prefer bullet list or JSON-style output for file listings."
-            )
-
-        response: Any = chat.send_message(prompt)
-
-        # Track tool calls and the last action taken and last tool args
-        last_action_taken: str | None = None
-        tool_calls: list[str] = []
-        last_tool_args: dict[str, Any] | None = None
-
-        # Tool-calling loop (max 10 iterations)
-        max_iterations = 10
-        iteration = 0
-        while iteration < max_iterations:
-            iteration += 1
-
-            if response.candidates:
-                has_function_call = False
-                function_response_parts: list[Any] = []
-
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, "function_call") and part.function_call:
-                        has_function_call = True
-                        tool_name = cast("str", part.function_call.name)
-                        tool_args = dict(cast("dict[str, Any]", part.function_call.args))
-
-                        # Track this tool call and its args
-                        last_action_taken = tool_name
-                        tool_calls.append(tool_name)
-                        last_tool_args = dict(tool_args)
-
-                        # Inject context container if not provided
-                        if context and "container" in context and "container" not in tool_args:
-                            tool_args["container"] = context["container"]
-
-                        # Call the tool
-                        try:
-                            tool_result = dispatch_tool_call(tool_name, tool_args, self._storage_client)
-                        except (
-                            AuthenticationError,
-                            ContainerNotFoundError,
-                            InvalidContainerError,
-                            InvalidFileObjectError,
-                            InvalidObjectNameError,
-                            LocalFileAccessError,
-                            ObjectNotFoundError,
-                            StorageBackendError,
-                        ) as exc:
-                            msg = f"Storage operation failed: {exc}"
-                            raise RuntimeError(msg) from exc
-
-                        # Handle summarize_file specially (use function response parts)
-                        if tool_name == "summarize_file":
-                            if tool_result.startswith("PDF_CONTENT_BASE64:"):
-                                base64_content = tool_result[len("PDF_CONTENT_BASE64:") :]
-                                try:
-                                    pdf_bytes = base64.b64decode(base64_content, validate=True)
-                                except (binascii.Error, ValueError) as exc:
-                                    msg = f"Invalid PDF base64 encoding from summarize_file: {exc}"
-                                    raise RuntimeError(msg) from exc
-
-                                function_response_parts.extend(
-                                    [
-                                        genai_types.Part.from_function_response(
-                                            name=tool_name,
-                                            response={"result": "PDF received"},
-                                        ),
-                                        genai_types.Part.from_bytes(
-                                            data=pdf_bytes,
-                                            mime_type="application/pdf",
-                                        ),
-                                    ]
-                                )
-                            else:
-                                # For text-based summaries, present the tool result as a function response
-                                function_response_parts.append(
-                                    genai_types.Part.from_function_response(
-                                        name=tool_name,
-                                        response={"result": tool_result},
-                                    )
-                                )
-                        elif tool_result.startswith("PDF_CONTENT_BASE64:"):
-                            base64_content = tool_result[len("PDF_CONTENT_BASE64:") :]
-                            try:
-                                pdf_bytes = base64.b64decode(base64_content, validate=True)
-                            except (binascii.Error, ValueError) as exc:
-                                msg = f"Invalid PDF base64 encoding from tool result: {exc}"
-                                raise RuntimeError(msg) from exc
-
-                            function_response_parts.extend(
-                                [
-                                    genai_types.Part.from_function_response(
-                                        name=tool_name,
-                                        response={"result": "PDF received"},
-                                    ),
-                                    genai_types.Part.from_bytes(
-                                        data=pdf_bytes,
-                                        mime_type="application/pdf",
-                                    ),
-                                ]
-                            )
-                        else:
-                            function_response_parts.append(
-                                genai_types.Part.from_function_response(
-                                    name=tool_name,
-                                    response={"result": tool_result},
-                                )
-                            )
-
-                if function_response_parts:
-                    response = chat.send_message(function_response_parts)
-
-                if not has_function_call:
-                    break
-            else:
-                break
-
-        # Check if we hit max iterations
-        if iteration >= max_iterations:
-            return AIResponse(
-                text="Could not complete the request after maximum tool call iterations.",
-                action_taken=last_action_taken,
-                tool_calls=tool_calls,
-                tool_args=last_tool_args,
-            )
-
-        final_text = self._extract_final_text(response)
+        Raises:
+            ValueError: If context is malformed.
+            RuntimeError: If a storage tool fails or a payload is invalid.
+        """
+        final_text, action_taken, tool_calls, tool_args = self._run_send_message(prompt, context)
         return AIResponse(
             text=final_text,
-            action_taken=last_action_taken,
+            action_taken=action_taken,
             tool_calls=tool_calls,
-            tool_args=last_tool_args,
+            tool_args=cast("dict[str, Any]", tool_args or {}),
         )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _validate_context(context: dict[str, object] | None) -> str | None:
+        """Validate optional context and return the container when present.
+
+        Raises ValueError when `context['container']` is present but invalid.
+        """
+        if context is None:
+            return None
+        container = context.get("container")
+        if container is None:
+            return None
+        if not isinstance(container, str) or not container.strip():
+            msg = "context['container'] must be a non-empty string"
+            raise ValueError(msg)
+        return container
+
+    @staticmethod
+    def _build_prompt(prompt: str, container: str | None) -> str:
+        """Augment the prompt with container context when available."""
+        if container is None:
+            return prompt
+        return (
+            f"Container: {container}\n"
+            f"Request: {prompt}\n"
+            "Respond concisely. Use the provided container directly. "
+            "Do not ask for clarification or repeat the container name "
+            "unless it is needed for the result. Prefer bullet list or JSON-style output."
+        )
+
+    @staticmethod
+    def _build_config() -> genai_types.GenerateContentConfig:
+        """Build the Gemini generation config with declared tools."""
+        system_instruction = (
+            "You are a cloud storage assistant, not a general conversational chatbot. "
+            "Use the provided tools to fulfill storage-related requests. "
+            "If a container is provided in context, treat it as authoritative "
+            "and never ask for it again. "
+            "Do not ask clarifying questions when the container is already provided. "
+            "Return only relevant storage results, with concise bullet lists or "
+            "JSON-style formatting when useful. "
+            "Avoid conversational filler and extra commentary."
+        )
+        return genai_types.GenerateContentConfig(
+            tools=cast(
+                "list[genai_types.Tool | Any]",
+                get_tool_declarations(),
+            ),
+            system_instruction=system_instruction,
+        )
+
+    @staticmethod
+    def _decode_pdf(base64_content: str, source: str) -> bytes:
+        """Decode a base64 PDF payload, raising RuntimeError on failure."""
+        try:
+            return base64.b64decode(base64_content, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            msg = f"Invalid PDF base64 encoding from {source}: {exc}"
+            raise RuntimeError(msg) from exc
+
+    @classmethod
+    def _normalize_tool_result(cls, tool_name: str, raw: str) -> _ToolPayload:
+        """Translate a raw tool string into a typed payload."""
+        if raw.startswith(_PDF_BASE64_PREFIX):
+            prefix_len = len(_PDF_BASE64_PREFIX)
+            pdf_bytes = cls._decode_pdf(raw[prefix_len:], source=f"{tool_name} tool result")
+            return _ToolPayload(pdf_bytes=pdf_bytes)
+        return _ToolPayload(text=raw)
+
+    @staticmethod
+    def _payload_to_parts(tool_name: str, payload: _ToolPayload) -> list[genai_types.Part]:
+        """Convert a typed tool payload into Gemini function-response parts."""
+        if payload.pdf_bytes is not None:
+            return [
+                genai_types.Part.from_function_response(
+                    name=tool_name, response={"result": "PDF received"}
+                ),
+                genai_types.Part.from_bytes(data=payload.pdf_bytes, mime_type="application/pdf"),
+            ]
+        return [
+            genai_types.Part.from_function_response(
+                name=tool_name, response={"result": payload.text}
+            )
+        ]
+
+    @staticmethod
+    def _extract_final_text(response: genai_types.GenerateContentResponse) -> str:
+        """Extract the final text from a Gemini response, with a fallback."""
+        text = response.text
+        if text:
+            return text
+        return "No response generated."
+
+    def _dispatch_tool(self, tool_name: str, tool_args: dict[str, object]) -> str:
+        """Dispatch a tool call, surfacing storage errors as RuntimeError."""
+        try:
+            return dispatch_tool_call(tool_name, tool_args, self._storage_client)
+        except (
+            AuthenticationError,
+            ContainerNotFoundError,
+            InvalidContainerError,
+            InvalidFileObjectError,
+            InvalidObjectNameError,
+            LocalFileAccessError,
+            ObjectNotFoundError,
+            StorageBackendError,
+        ) as exc:
+            msg = f"Storage operation failed: {exc}"
+            raise RuntimeError(msg) from exc
+
+    def _run_send_message(
+        self,
+        prompt: str,
+        context: dict[str, object] | None = None,
+    ) -> tuple[str, str | None, list[str], dict[str, object] | None]:
+        """Drive the tool-calling loop and return final text plus telemetry.
+
+        Returns a 4-tuple (final_text, last_action_taken, tool_calls, last_tool_args).
+        """
+        container = self._validate_context(context)
+        config = self._build_config()
+        chat = self._genai_client.chats.create(model=self._model_name, config=config)
+        final_prompt = self._build_prompt(prompt, container)
+        response: genai_types.GenerateContentResponse = chat.send_message(final_prompt)
+
+        last_action_taken: str | None = None
+        tool_calls: list[str] = []
+        last_tool_args: dict[str, object] | None = None
+
+        for _ in range(self.MAX_TOOL_ITERATIONS):
+            candidates = getattr(response, "candidates", None)
+            if not candidates:
+                break
+
+            candidate = candidates[0]
+            if candidate.content is None or not candidate.content.parts:
+                break
+
+            function_response_parts: list[genai_types.Part] = []
+            has_function_call = False
+
+            for part in candidate.content.parts:
+                function_call = part.function_call
+                if not function_call:
+                    continue
+
+                # function_call.name is typed `str | None` by the SDK
+                if not function_call.name:
+                    continue
+
+                has_function_call = True
+                tool_name: str = function_call.name
+                tool_args: dict[str, object] = dict(function_call.args or {})
+
+                if container is not None and "container" not in tool_args:
+                    tool_args["container"] = container
+
+                last_action_taken = tool_name
+                tool_calls.append(tool_name)
+                last_tool_args = dict(tool_args)
+
+                tool_result = self._dispatch_tool(tool_name, tool_args)
+                payload = self._normalize_tool_result(tool_name, tool_result)
+                function_response_parts.extend(self._payload_to_parts(tool_name, payload))
+
+            if not has_function_call:
+                break
+
+            if function_response_parts:
+                response = chat.send_message(function_response_parts)
+        else:
+            # All MAX_TOOL_ITERATIONS consumed without the model producing a final answer.
+            logger = logging.getLogger(__name__)
+            logger.warning("Tool loop exhausted after %d iterations", self.MAX_TOOL_ITERATIONS)
+            return (
+                "Could not complete the request after maximum tool call iterations.",
+                last_action_taken,
+                tool_calls,
+                last_tool_args,
+            )
+
+        return (self._extract_final_text(response), last_action_taken, tool_calls, last_tool_args)

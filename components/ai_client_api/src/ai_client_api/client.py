@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from ai_client_api.models import AIResponse
+from typing import Any
 
 
 class AiClientApi(ABC):
@@ -17,13 +14,15 @@ class AiClientApi(ABC):
         self,
         prompt: str,
         context: dict[str, Any] | None = None,
-    ) -> AIResponse:
-        """Send a natural language prompt and return a structured AI response.
+    ) -> str:
+        """Send a natural language prompt and return the AI's text reply.
 
         Args:
             prompt: The user's natural language request.
             context: Optional key-value context (e.g. default container name).
 
         Returns:
-            AIResponse containing text, action_taken, and tool_calls.
+            The AI's text response. Implementations are responsible for
+            executing any tool calls internally before returning the final
+            text reply.
         """

@@ -58,7 +58,7 @@ jobs:
           name: "Mypy Strict"
           command: |
             source .venv/bin/activate
-            mypy components/
+            mypy .
 
   unit_test:
     docker:
@@ -108,6 +108,107 @@ jobs:
       - store_artifacts:
           path: test-results/integration
 
+  mkdocs_build:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: "MkDocs Build"
+          command: |
+            source .venv/bin/activate
+            mkdocs build 
+      - store_artifacts:
+          path: site
+          destination: docs-site
+
+  terraform_plan:
+    docker:
+      - image: hashicorp/terraform:1.8
+    working_directory: ~/project/infrastructure
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: "Terraform Init"
+          command: terraform init -input=false
+      - run:
+          name: "Terraform Format Check"
+          command: terraform fmt -check -recursive
+      - run:
+          name: "Terraform Validate"
+          command: terraform validate
+      - run:
+          name: "Terraform Plan"
+          command: terraform plan -input=false -out=tfplan
+      - persist_to_workspace:
+          root: ~/project
+          paths:
+            - infrastructure/tfplan
+            - infrastructure/.terraform
+            - infrastructure/.terraform.lock.hcl
+
+  terraform_apply:
+    docker:
+      - image: hashicorp/terraform:1.8
+    working_directory: ~/project/infrastructure
+    steps:
+      - checkout:
+          path: ~/project
+      - attach_workspace:
+          at: ~/project
+      - run:
+          name: "Terraform Init"
+          command: terraform init -input=false
+      - run:
+          name: "Import existing Render service if not in state"
+          command: |
+            if ! terraform state list | grep -q "render_web_service.cloud_storage"; then
+              echo "Resource not in state, importing..."
+              terraform import render_web_service.cloud_storage $RENDER_SERVICE_ID
+            else
+              echo "Resource already in state, skipping import"
+            fi
+      - run:
+          name: "Terraform Plan (post-import)"
+          command: terraform plan -input=false -out=tfplan
+      - run:
+          name: "Terraform Apply"
+          command: terraform apply -input=false -auto-approve tfplan
+      - run:
+          name: "Export STAGING_SERVICE_URL for downstream jobs"
+          command: |
+            mkdir -p ~/project/deploy-output
+            terraform output -raw service_url > ~/project/deploy-output/staging_service_url.txt
+            echo "Deployed: $(cat ~/project/deploy-output/staging_service_url.txt)"
+      - persist_to_workspace:
+          root: ~/project
+          paths:
+            - deploy-output/staging_service_url.txt
+
+  post_deploy_e2e:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: "Run E2E against deployed service"
+          command: |
+            source .venv/bin/activate
+            export STAGING_SERVICE_URL="$(cat deploy-output/staging_service_url.txt)"
+            echo "Running e2e against: $STAGING_SERVICE_URL"
+            mkdir -p test-results/post-deploy-e2e
+            pytest tests/e2e/ \
+              --junitxml=test-results/post-deploy-e2e/junit.xml \
+              -v \
+              --no-cov
+      - store_test_results:
+          path: test-results/post-deploy-e2e
+      - store_artifacts:
+          path: test-results/post-deploy-e2e
+
   check_render_deploy:
     docker:
       - image: cimg/python:3.12
@@ -143,89 +244,6 @@ jobs:
             echo "Timed out waiting for Render deployment to complete." >&2
             exit 1
 
-  # Terraform: plan
-  terraform_plan:
-    docker:
-      - image: hashicorp/terraform:1.8
-    working_directory: ~/project/infrastructure
-    steps:
-      - checkout:
-          path: ~/project
-      - run:
-          name: "Terraform Init"
-          command: terraform init -input=false
-      - run:
-          name: "Terraform Format Check"
-          command: terraform fmt -check -recursive
-      - run:
-          name: "Terraform Validate"
-          command: terraform validate
-      - run:
-          name: "Terraform Plan"
-          command: terraform plan -input=false -out=tfplan
-      - persist_to_workspace:
-          root: ~/project
-          paths:
-            - infrastructure/tfplan
-            - infrastructure/.terraform
-            - infrastructure/.terraform.lock.hcl
-
-  # Terraform: apply
-  terraform_apply:
-    docker:
-      - image: hashicorp/terraform:1.8
-    working_directory: ~/project/infrastructure
-    steps:
-      - checkout:
-          path: ~/project
-      - attach_workspace:
-          at: ~/project
-      - run:
-          name: "Terraform Init"
-          command: terraform init -input=false
-      - run:
-          name: "Import existing Render service into Terraform state"
-          command: terraform import render_web_service.cloud_storage $RENDER_SERVICE_ID
-      - run:
-          name: "Terraform Plan (post-import)"
-          command: terraform plan -input=false -out=tfplan
-      - run:
-          name: "Terraform Apply"
-          command: terraform apply -input=false -auto-approve tfplan
-      - run:
-          name: "Export STAGING_SERVICE_URL for downstream jobs"
-          command: |
-            mkdir -p ~/project/deploy-output
-            terraform output -raw service_url > ~/project/deploy-output/staging_service_url.txt
-            echo "Deployed: $(cat ~/project/deploy-output/staging_service_url.txt)"
-      - persist_to_workspace:
-          root: ~/project
-          paths:
-            - deploy-output/staging_service_url.txt
-
-  # Post-deploy E2E: runs the e2e test suite against the live Render service
-  post_deploy_e2e:
-    docker:
-      - image: cimg/python:3.12
-    steps:
-      - attach_workspace:
-          at: .
-      - run:
-          name: "Run E2E against deployed service"
-          command: |
-            source .venv/bin/activate
-            export STAGING_SERVICE_URL="$(cat deploy-output/staging_service_url.txt)"
-            echo "Running e2e against: $STAGING_SERVICE_URL"
-            mkdir -p test-results/post-deploy-e2e
-            pytest tests/e2e/ \
-              --junitxml=test-results/post-deploy-e2e/junit.xml \
-              -v \
-              --no-cov
-      - store_test_results:
-          path: test-results/post-deploy-e2e
-      - store_artifacts:
-          path: test-results/post-deploy-e2e
-
 workflows:
   build_and_test:
     jobs:
@@ -246,6 +264,9 @@ workflows:
       - integration_test:
           requires:
             - unit_test
+      - mkdocs_build:
+          requires:
+            - build
       - terraform_plan:
           requires:
             - lint
