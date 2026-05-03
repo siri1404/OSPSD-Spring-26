@@ -76,7 +76,7 @@ class GeminiAiClient(AiClientApi):
             raise ValueError(msg)
 
         # Use AI Studio client.
-        self._genai_client = genai.Client(api_key=resolved_key)
+        self._genai_client = genai.Client(api_key=resolved_key, vertexai=True)
 
     # ------------------------------------------------------------------
     # Public API
