@@ -256,7 +256,7 @@ class GCPCloudStorageClient(CloudStorageClient):
         """Convert a GCS Blob to a shared ObjectInfo."""
         return ObjectInfo(
             object_name=blob.name,
-            version_id=blob.generation,
+            version_id=str(blob.generation) if blob.generation is not None else None,
             data_type=blob.content_type,
             integrity=blob.etag,
             encryption=blob.kms_key_name or None,
