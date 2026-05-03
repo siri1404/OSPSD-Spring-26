@@ -107,16 +107,16 @@ def test_send_message_returns_plain_text_when_no_candidates_mock(
 
 
 @pytest.mark.unit
-def test_send_message_does_not_pass_vertexai_flag_mock(
+def test_send_message_passes_vertexai_flag_mock(
     mock_storage_client: MagicMock,
 ) -> None:
-    """Regression: client must NOT pass vertexai=True when using an API key."""
+    """Client initializes with vertexai=True for Vertex AI integration."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         _wire_genai_mock(mock_genai, _make_response(text="ok", parts=None))
 
         GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
 
-        mock_genai.Client.assert_called_once_with(api_key="test-key")
+        mock_genai.Client.assert_called_once_with(api_key="test-key", vertexai=True)
 
 
 @pytest.mark.unit
@@ -132,7 +132,7 @@ def test_api_key_read_from_env_when_not_passed_mock(
         client = GeminiAiClient(storage_client=mock_storage_client)
 
         assert client is not None
-        mock_genai.Client.assert_called_once_with(api_key="env-key")
+        mock_genai.Client.assert_called_once_with(api_key="env-key", vertexai=True)
 
 
 @pytest.mark.unit
