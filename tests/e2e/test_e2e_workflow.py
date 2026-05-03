@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 import pytest
 
-_TEST_CONTAINER = "test-bucket"
+_TEST_CONTAINER = os.getenv("GCS_BUCKET_NAME", "test-bucket")
 
 
 # ---------------------------------------------------------------------------
