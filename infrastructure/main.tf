@@ -14,7 +14,7 @@ terraform {
   required_providers {
     render = {
       source  = "render-oss/render"
-      version = "1.8.0"
+      version = "~> 1.8"
     }
   }
 
@@ -66,12 +66,6 @@ resource "render_web_service" "cloud_storage" {
     SLACK_BOT_TOKEN = { value = var.SLACK_BOT_TOKEN }
     CHAT_CHANNEL_ID = { value = var.CHAT_CHANNEL_ID }
   }
-
-  lifecycle {
-    ignore_changes = [
-      maintenance_mode,
-    ]
-  }
 }
 
 # ============================================================================
@@ -96,12 +90,6 @@ resource "render_web_service" "prometheus" {
   env_vars = {
     # Use the Render-internal service name; resolved within the team network.
     PROMETHEUS_SCRAPE_TARGET = { value = "cloud-storage-service:8000" }
-  }
-
-  lifecycle {
-    ignore_changes = [
-      maintenance_mode,
-    ]
   }
 
   depends_on = [render_web_service.cloud_storage]
@@ -133,12 +121,6 @@ resource "render_web_service" "grafana" {
     # Points Grafana at the Prometheus private service by its Render name.
     # Render resolves http://prometheus:9090 within the team network.
     GF_DATASOURCE_PROMETHEUS_URL = { value = "http://prometheus:9090" }
-  }
-
-  lifecycle {
-    ignore_changes = [
-      maintenance_mode,
-    ]
   }
 
   depends_on = [render_web_service.prometheus]
