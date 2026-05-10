@@ -50,6 +50,9 @@ The provider-agnostic storage contract is maintained in the cross-team repositor
 
 **Source of truth:** `cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }`
 
+**Vertical Memo:** [Cloud Storage API Contract (Teams 2, 6, 10)](https://docs.google.com/document/d/1WaYBeOeIb4Jyiz9BlNqNhisPJOL4cgBe-BK9VLG_RVQ/edit?tab=t.0)
+
+
 **chat_client_api** (Git Dependency - Team 9)
 
 The cross-team chat interface from Team 9. Enables pluggable chat integrations (Slack, Teams, Discord, etc.) without tying storage logic to a specific chat provider.

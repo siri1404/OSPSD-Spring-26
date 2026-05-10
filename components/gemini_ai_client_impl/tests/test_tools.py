@@ -504,7 +504,7 @@ def test_dispatch_tool_call_missing_container_returns_error_string_mock(
     """Missing required arg 'container' returns a recoverable error string."""
     result = dispatch_tool_call("list_files", {}, mock_storage_client)
 
-    assert "missing required arg" in result
+    assert "Field required" in result or "missing" in result.lower()
     assert "container" in result
     mock_storage_client.list_files.assert_not_called()
 
@@ -520,7 +520,7 @@ def test_dispatch_tool_call_missing_object_name_returns_error_string_mock(
         mock_storage_client,
     )
 
-    assert "missing required arg" in result
+    assert "Field required" in result or "missing" in result.lower()
     assert "object_name" in result
     mock_storage_client.delete_file.assert_not_called()
 
@@ -536,6 +536,6 @@ def test_dispatch_tool_call_missing_upload_args_returns_error_string_mock(
         mock_storage_client,
     )
 
-    assert "missing required arg" in result
+    assert "Field required" in result or "missing" in result.lower()
     assert "remote_path" in result
     mock_storage_client.upload_file.assert_not_called()

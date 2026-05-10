@@ -25,7 +25,7 @@ _NAMESPACE = "storage_service"
 requests_total = Counter(
     f"{_NAMESPACE}_requests_total",
     "Total number of HTTP requests",
-    ["endpoint", "method", "status_code"],
+    ["endpoint", "method", "status_code", "error_class"],
 )
 
 request_latency_seconds = Histogram(
@@ -87,6 +87,11 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
         Returns:
             HTTP response with metrics recorded.
+
+        Note:
+            When an exception occurs, we distinguish between:
+            - endpoint="unknown" (no matching route): indicates infrastructure issue
+            - endpoint!="unknown" (route matched but handler failed): indicates handler error
         """
         method = request.method
         start_time = time.perf_counter()
@@ -94,13 +99,14 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
-            # Route is populated during call_next, so it's available here.
             latency = time.perf_counter() - start_time
             endpoint = _get_route_template(request)
+            error_class = "infra" if endpoint == "unknown" else "handler"
             requests_total.labels(
                 endpoint=endpoint,
                 method=method,
                 status_code="500",
+                error_class=error_class,
             ).inc()
             request_latency_seconds.labels(
                 endpoint=endpoint,
@@ -110,10 +116,18 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
         latency = time.perf_counter() - start_time
         endpoint = _get_route_template(request)
+        status_code = response.status_code
+        if status_code < 400:
+            error_class = "success"
+        elif status_code < 500 and endpoint != "unknown":
+            error_class = "domain"
+        else:
+            error_class = "infra"
         requests_total.labels(
             endpoint=endpoint,
             method=method,
-            status_code=str(response.status_code),
+            status_code=str(status_code),
+            error_class=error_class,
         ).inc()
         request_latency_seconds.labels(
             endpoint=endpoint,

@@ -11,15 +11,7 @@ dependencies = []  # workspace shell — components carry their own runtime deps
 # ============================================================================
 [dependency-groups]
 dev = [
-    # Workspace + git deps (so uv sync resolves them at the root level)
-    "ai-client-api",
-    "chat-client-wrapper",
-    "cloud-storage-adapter",
-    "cloud-storage-api",
-    "cloud-storage-service",
-    "gcp-client-impl",
-    "gemini-ai-client-impl",
-    # Tooling
+    # Tooling and development dependencies
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.15",
     "mkdocstrings-python>=1.16.12",

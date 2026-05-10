@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.integration
-def test_ai_chat_list_files_tool_invocation(
+def test_ai_chat_list_files_tool_invocation_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -54,7 +54,7 @@ def test_ai_chat_list_files_tool_invocation(
 
 
 @pytest.mark.integration
-def test_ai_chat_delete_file_tool_invocation(
+def test_ai_chat_delete_file_tool_invocation_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -81,7 +81,7 @@ def test_ai_chat_delete_file_tool_invocation(
 
 
 @pytest.mark.integration
-def test_ai_chat_get_file_info_tool_invocation(
+def test_ai_chat_get_file_info_tool_invocation_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -108,7 +108,7 @@ def test_ai_chat_get_file_info_tool_invocation(
 
 
 @pytest.mark.integration
-def test_ai_chat_download_file_tool_invocation(
+def test_ai_chat_download_file_tool_invocation_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -135,7 +135,7 @@ def test_ai_chat_download_file_tool_invocation(
 
 
 @pytest.mark.integration
-def test_ai_chat_upload_file_tool_invocation(
+def test_ai_chat_upload_file_tool_invocation_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -170,7 +170,7 @@ def test_ai_chat_upload_file_tool_invocation(
 
 
 @pytest.mark.integration
-def test_ai_chat_forwards_prompt_to_ai_client(
+def test_ai_chat_forwards_prompt_to_ai_client_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -196,7 +196,7 @@ def test_ai_chat_forwards_prompt_to_ai_client(
 
 
 @pytest.mark.integration
-def test_multiple_sequential_ai_operations(
+def test_multiple_sequential_ai_operations_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,

@@ -42,7 +42,7 @@ from fastapi import (
 from fastapi.responses import PlainTextResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials  # noqa: TC002
 from gcp_client_impl import GCPCloudStorageClient
-from gemini_ai_client_impl import GeminiAiClient
+from gemini_ai_client_impl import GeminiAiClient, ToolLoopExhaustedError
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .auth import (
@@ -642,6 +642,14 @@ async def ai_chat(
         else:
             text = ai_client.send_message(prompt=prompt, context=context)
             ai_response = AIResponse(text=text, action_taken=None, tool_calls=[])
+    except ToolLoopExhaustedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                "The AI could not complete the request after exhausting its tool-calling loop. "
+                "The request may be too complex or the AI got stuck in a repetitive pattern."
+            ),
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

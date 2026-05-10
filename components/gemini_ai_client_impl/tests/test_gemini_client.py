@@ -21,7 +21,7 @@ import pytest
 from ai_client_api import AIResponse
 from cloud_storage_api.exceptions import StorageBackendError
 
-from gemini_ai_client_impl import GeminiAiClient
+from gemini_ai_client_impl import GeminiAiClient, ToolLoopExhaustedError
 
 # ============================================================================
 # Fixtures and helpers
@@ -84,6 +84,49 @@ def _wire_genai_mock(
 
 
 # ============================================================================
+# tools() method — expose available tool definitions
+# ============================================================================
+
+
+@pytest.mark.unit
+def test_tools_returns_list_of_tool_definitions_mock(
+    mock_storage_client: MagicMock,
+) -> None:
+    """tools() returns a list of ToolDefinition objects describing available tools."""
+    with patch("gemini_ai_client_impl.client.genai") as mock_genai:
+        _wire_genai_mock(mock_genai, _make_response(text="ok", parts=None))
+
+        client = GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
+        tools = client.tools()
+
+        assert isinstance(tools, list)
+        # 6 tools: list_files, get_file_info, delete_file, upload_file, download_file,
+        # summarize_file
+        assert len(tools) == 6
+
+        # Verify each tool has required attributes
+        tool_names = {tool.name for tool in tools}
+        expected_tools = {
+            "list_files",
+            "get_file_info",
+            "delete_file",
+            "upload_file",
+            "download_file",
+            "summarize_file",
+        }
+        assert tool_names == expected_tools
+
+        # Verify a specific tool has parameters
+        list_files_tool = next(t for t in tools if t.name == "list_files")
+        assert "list" in list_files_tool.description.lower()
+        assert len(list_files_tool.parameters) > 0
+
+        # Verify parameter structure
+        param_names = {p.name for p in list_files_tool.parameters}
+        assert "container" in param_names
+
+
+# ============================================================================
 # send_message (str contract) — HW-3 shared API
 # ============================================================================
 
@@ -107,16 +150,16 @@ def test_send_message_returns_plain_text_when_no_candidates_mock(
 
 
 @pytest.mark.unit
-def test_send_message_passes_vertexai_flag_mock(
+def test_send_message_passes_api_key_to_client_mock(
     mock_storage_client: MagicMock,
 ) -> None:
-    """Client initializes with vertexai=True for Vertex AI integration."""
+    """Client initializes with API key for Google AI Studio authentication."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         _wire_genai_mock(mock_genai, _make_response(text="ok", parts=None))
 
         GeminiAiClient(storage_client=mock_storage_client, api_key="test-key")
 
-        mock_genai.Client.assert_called_once_with(api_key="test-key", vertexai=True)
+        mock_genai.Client.assert_called_once_with(api_key="test-key")
 
 
 @pytest.mark.unit
@@ -132,7 +175,7 @@ def test_api_key_read_from_env_when_not_passed_mock(
         client = GeminiAiClient(storage_client=mock_storage_client)
 
         assert client is not None
-        mock_genai.Client.assert_called_once_with(api_key="env-key", vertexai=True)
+        mock_genai.Client.assert_called_once_with(api_key="env-key")
 
 
 @pytest.mark.unit
@@ -345,7 +388,7 @@ def test_send_message_rejects_invalid_context_container_mock(
 def test_send_message_caps_at_max_iterations_mock(
     mock_storage_client: MagicMock,
 ) -> None:
-    """The tool loop terminates after MAX_TOOL_ITERATIONS with sentinel text."""
+    """The tool loop exhausts after MAX_TOOL_ITERATIONS and raises ToolLoopExhaustedError."""
     with patch("gemini_ai_client_impl.client.genai") as mock_genai:
         # Always return a function call → forces the loop to exhaust iterations.
         looping_response = _make_response(
@@ -362,12 +405,21 @@ def test_send_message_caps_at_max_iterations_mock(
                 storage_client=mock_storage_client,
                 api_key="test-key",
             )
-            result = client.send_message_with_metadata("test")
+            # send_message should raise ToolLoopExhaustedError
+            with pytest.raises(ToolLoopExhaustedError) as exc_info:
+                client.send_message("test")
 
-            assert isinstance(result, AIResponse)
-            assert "maximum tool call iterations" in result.text
-            assert result.action_taken == "list_files"
-            assert len(result.tool_calls) == GeminiAiClient.MAX_TOOL_ITERATIONS
+            error = exc_info.value
+            assert error.max_iterations == GeminiAiClient.MAX_TOOL_ITERATIONS
+            assert error.last_action_taken == "list_files"
+            assert len(error.tool_calls) == GeminiAiClient.MAX_TOOL_ITERATIONS
+
+            # send_message_with_metadata should also raise the same error
+            with pytest.raises(ToolLoopExhaustedError) as exc_info2:
+                client.send_message_with_metadata("test")
+
+            error2 = exc_info2.value
+            assert error2.max_iterations == GeminiAiClient.MAX_TOOL_ITERATIONS
 
 
 @pytest.mark.unit

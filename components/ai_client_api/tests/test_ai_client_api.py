@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from ai_client_api import AiClientApi
+
+if TYPE_CHECKING:
+    from ai_client_api import ToolDefinition
 
 
 @pytest.mark.unit
@@ -38,6 +41,9 @@ def test_properly_implemented_subclass_can_be_instantiated() -> None:
         ) -> str:
             return "response"
 
+        def tools(self) -> list[ToolDefinition]:
+            return []
+
     client = CompleteClient()
     assert isinstance(client, AiClientApi)
 
@@ -55,6 +61,9 @@ def test_send_message_can_be_called_on_subclass() -> None:
             if context and "container" in context:
                 return f"Using {context['container']}: {prompt}"
             return prompt
+
+        def tools(self) -> list[ToolDefinition]:
+            return []
 
     client = TestClient()
     result = client.send_message("list files")
@@ -77,6 +86,9 @@ def test_send_message_signature_accepts_optional_context() -> None:
             context: dict[str, Any] | None = None,
         ) -> str:
             return "ok"
+
+        def tools(self) -> list[ToolDefinition]:
+            return []
 
     client = TestClient()
     # Should work with just prompt

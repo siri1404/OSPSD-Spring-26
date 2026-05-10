@@ -12,6 +12,7 @@ from cloud_storage_api.exceptions import (
     ObjectNotFoundError,
     StorageBackendError,
 )
+from gemini_ai_client_impl import ToolLoopExhaustedError
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -72,6 +73,32 @@ def test_ai_chat_propagates_runtime_error_as_500(
 
     assert response.status_code == 500
     assert "storage failed" in response.json()["detail"]
+
+
+@pytest.mark.unit
+def test_ai_chat_propagates_tool_loop_exhausted_as_504(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    mock_ai_client: MagicMock,
+    mock_get_ai_client: MagicMock,
+) -> None:
+    """/ai/chat returns 504 when the AI tool loop exhausts."""
+    mock_ai_client.send_message_with_metadata.side_effect = ToolLoopExhaustedError(
+        max_iterations=10,
+        last_action_taken="list_files",
+        tool_calls=["list_files"] * 10,
+    )
+
+    response = client.post(
+        "/ai/chat",
+        json={"prompt": "test"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 504
+    detail = response.json()["detail"]
+    assert "exhaust" in detail.lower()
+    assert "tool-calling loop" in detail.lower()
 
 
 @pytest.mark.unit

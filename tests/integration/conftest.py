@@ -3,6 +3,21 @@
 Provides fixtures shared across integration tests. Mirrors the per-component
 conftest at components/cloud_storage_service/tests/conftest.py but
 auto-applies the AI and chat mocks for every integration test.
+
+MOCKING STRATEGY: The autouse _apply_mocks fixture overrides get_ai_client and
+get_chat_notification at the FastAPI dependency injection boundary. This is NOT
+mocking all components — it mocks the DI injection point so route-level tests
+can run without network credentials (Gemini API, Slack API).
+
+These tests verify that the FastAPI routing, middleware, auth, and response
+serialization layers work correctly with controlled AI/chat responses. They are
+labeled @pytest.mark.integration because they exercise the full HTTP stack
+(real FastAPI app, real middleware, real auth), but the AI and chat clients are
+mocked at the DI boundary.
+
+For boundary tests that construct real GeminiAiClient instances with stubbed
+transports (exercising the actual tool-dispatch loop), see:
+components/cloud_storage_service/tests/test_integration_ai_to_chat.py
 """
 
 from __future__ import annotations

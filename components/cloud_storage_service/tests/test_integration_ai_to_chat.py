@@ -20,8 +20,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.unit
-@pytest.mark.integration
-def test_ai_chat_endpoint_returns_ai_response(
+def test_ai_chat_endpoint_returns_ai_response_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -52,8 +51,7 @@ def test_ai_chat_endpoint_returns_ai_response(
 
 
 @pytest.mark.unit
-@pytest.mark.integration
-def test_ai_delete_file_response_includes_action(
+def test_ai_delete_file_response_includes_action_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -82,8 +80,7 @@ def test_ai_delete_file_response_includes_action(
 
 
 @pytest.mark.unit
-@pytest.mark.integration
-def test_ai_chat_endpoint_response_structure(
+def test_ai_chat_endpoint_response_structure_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -114,7 +111,6 @@ def test_ai_chat_endpoint_response_structure(
 
 
 @pytest.mark.unit
-@pytest.mark.integration
 @pytest.mark.parametrize(
     ("action", "response_text"),
     [
@@ -152,8 +148,7 @@ def test_ai_chat_with_various_actions(
 
 
 @pytest.mark.unit
-@pytest.mark.integration
-def test_ai_chat_requires_auth_token(client: TestClient) -> None:
+def test_ai_chat_requires_auth_token_mock(client: TestClient) -> None:
     """/ai/chat rejects requests without an authorization header or with an invalid token."""
     no_auth = client.post(
         "/ai/chat",
@@ -174,8 +169,7 @@ def test_ai_chat_requires_auth_token(client: TestClient) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.integration
-def test_ai_chat_accepts_container_header(
+def test_ai_chat_accepts_container_header_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -475,3 +469,93 @@ def test_gemini_tool_loop_multiple_turns_with_context_injection() -> None:
         assert result.action_taken == "list_files"
         mock_storage.list_files.assert_called_once()
         assert "injected-bucket" in str(mock_storage.list_files.call_args)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint integration test with real AI tool dispatch (no endpoint mocks)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_ai_chat_endpoint_with_real_gemini_tool_dispatch(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """End-to-end: /ai/chat endpoint with REAL GeminiAiClient tool dispatch.
+
+    This test verifies that:
+    - The HTTP endpoint invokes the GeminiAiClient without DI mocking
+    - Tool dispatch logic executes in real code paths (not mocked at DI level)
+    - The real storage client receives actual tool calls
+    - The endpoint returns action_taken with the correct tool name
+
+    Mocks only genai.Client to control conversation flow without hitting the real API.
+    """
+    from io import BytesIO
+
+    from cloud_storage_api.models import ObjectInfo
+    from fastapi.testclient import TestClient
+
+    # Create a real mock storage that tracks tool dispatch calls
+    mock_storage = MagicMock()
+    test_obj = ObjectInfo(
+        object_name="test-file.txt",
+        version_id="v123",
+        size_bytes=100,
+        data_type="text/plain",
+        integrity="crc32c=1234",
+        encryption="AES256",
+        storage_tier="standard",
+        updated_at=datetime.now(tz=UTC),
+        metadata={"key": "value"},
+    )
+    mock_storage.list_files.return_value = [test_obj]
+
+    # Patch genai.Client to control the tool loop without hitting real Gemini API
+    with patch("gemini_ai_client_impl.client.genai.Client") as mock_genai_cls:
+        mock_chat = MagicMock()
+        mock_genai_cls.return_value.chats.create.return_value = mock_chat
+        # Tool loop: AI calls list_files, then responds with final text
+        mock_chat.send_message.side_effect = [
+            _make_response_with_parts([_make_function_call_part("list_files", {"container": "test-bucket"})]),
+            _make_final_response("Found 1 test file."),
+        ]
+
+        # Use FastAPI's dependency override to inject real GeminiAiClient with mock storage
+        from cloud_storage_service.main import app, get_ai_client
+        from gemini_ai_client_impl.client import GeminiAiClient
+
+        real_ai_client = GeminiAiClient(storage_client=mock_storage, api_key="test-key")
+
+        def override_get_ai_client() -> GeminiAiClient:
+            """Override DI to return GeminiAiClient with mocked storage."""
+            return real_ai_client
+
+        app.dependency_overrides[get_ai_client] = override_get_ai_client
+
+        try:
+            # Make the endpoint call
+            response = client.post(
+                "/ai/chat",
+                json={"prompt": "list the files"},
+                headers={**auth_headers, "X-Container": "test-bucket"},
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            # Verify the action_taken reflects the real tool dispatch
+            assert data["action_taken"] == "list_files"
+            assert "test-file.txt" in data["response"] or "Found" in data["response"]
+            # Verify the tool dispatch REALLY called the storage client
+            mock_storage.list_files.assert_called_once()
+            call_args, call_kwargs = mock_storage.list_files.call_args
+            # Check if container was passed as positional or keyword argument
+            assert (
+                "test-bucket" in str(call_args)
+                or "test-bucket" in str(call_kwargs)
+                or (len(call_args) > 0 and call_args[0] == "test-bucket")
+                or call_kwargs.get("container") == "test-bucket"
+            )
+        finally:
+            # Clean up the override
+            app.dependency_overrides.clear()

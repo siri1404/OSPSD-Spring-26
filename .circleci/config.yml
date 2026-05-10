@@ -194,10 +194,10 @@ jobs:
       - attach_workspace:
           at: .
       - run:
-          name: "Wait for Render auto-deploy to settle"
+          name: "Brief settle after deploy verification"
           command: |
-            echo "Sleeping 90s to let Render's auto_deploy redeploy from this commit..."
-            sleep 90
+            echo "Deploy verified by check_render_deploy. Brief settle..."
+            sleep 10
       - run:
           name: "Run E2E against deployed service"
           command: |
@@ -271,6 +271,9 @@ workflows:
           requires:
             - build
       - integration_test:
+          # No context needed: all integration tests run with mocked AI/chat/storage
+          # clients at the FastAPI DI boundary. See tests/integration/conftest.py
+          # docstring for the mocking strategy.
           requires:
             - unit_test
       - mkdocs_build:
@@ -307,7 +310,7 @@ workflows:
       #       branches:
       #         only:
       #           - hw-3
-      - post_deploy_e2e:
+      - check_render_deploy:
           context: render-deploy
           requires:
             - build
@@ -316,10 +319,10 @@ workflows:
             branches:
               only:
                 - hw-3
-      - check_render_deploy:
+      - post_deploy_e2e:
           context: render-deploy
           requires:
-            - post_deploy_e2e
+            - check_render_deploy
           filters:
             branches:
               only:

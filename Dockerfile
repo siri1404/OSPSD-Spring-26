@@ -15,10 +15,13 @@ COPY main.py openapi.json README.md ./
 
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 
-# Add this line ↓
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-
-RUN uv sync --frozen --no-dev --no-editable --all-packages
+# Install dependencies. Using --all-packages ensures all workspace members
+# (ai-client-api, gemini-ai-client-impl, etc.) are included even with --no-dev.
+# Note: With uv workspaces, members are auto-discovered from [tool.uv.workspace]
+# members list, so they're always available in a local build regardless of
+# [dependency-groups]. However, --all-packages makes this explicit.
+# See: https://docs.astral.sh/uv/concepts/workspaces/
+RUN uv sync --frozen --no-dev --all-packages
 
 ENV PORT=8000
 EXPOSE 8000

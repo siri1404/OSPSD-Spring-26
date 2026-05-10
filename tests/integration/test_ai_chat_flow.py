@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.integration
-def test_ai_delete_triggers_chat_notification_with_object_name(
+def test_ai_delete_triggers_chat_notification_with_object_name_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -68,7 +68,7 @@ def test_ai_delete_triggers_chat_notification_with_object_name(
 
 
 @pytest.mark.integration
-def test_direct_upload_triggers_chat_notification(
+def test_direct_upload_triggers_chat_notification_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_storage_client: MagicMock,
@@ -102,7 +102,7 @@ def test_direct_upload_triggers_chat_notification(
 
 
 @pytest.mark.integration
-def test_ai_action_notification_with_tool_args_detail(
+def test_ai_action_notification_with_tool_args_detail_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -138,7 +138,7 @@ def test_ai_action_notification_with_tool_args_detail(
 
 
 @pytest.mark.integration
-def test_ai_download_and_summarize_flow(
+def test_ai_download_and_summarize_flow_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -172,7 +172,7 @@ def test_ai_download_and_summarize_flow(
 
 
 @pytest.mark.integration
-def test_ai_tool_invocation_error_resilience(
+def test_ai_tool_invocation_error_resilience_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -205,7 +205,7 @@ def test_ai_tool_invocation_error_resilience(
 
 
 @pytest.mark.integration
-def test_ai_notification_uses_configured_channel(
+def test_ai_notification_uses_configured_channel_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,
@@ -240,7 +240,7 @@ def test_ai_notification_uses_configured_channel(
 
 
 @pytest.mark.integration
-def test_end_to_end_ai_storage_chat_flow(
+def test_end_to_end_ai_storage_chat_flow_mock(
     client: TestClient,
     auth_headers: dict[str, str],
     mock_ai_client: MagicMock,

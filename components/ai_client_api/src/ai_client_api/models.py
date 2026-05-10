@@ -22,3 +22,35 @@ class AIResponse:
     action_taken: str | None = None
     tool_calls: list[str] = field(default_factory=list)
     tool_args: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ToolParameter:
+    """Describes a single parameter of a tool.
+
+    Attributes:
+        name: Parameter name (e.g., 'container', 'object_name').
+        type: Parameter type (e.g., 'string', 'integer', 'boolean').
+        description: Human-readable description of the parameter.
+        required: Whether this parameter is mandatory.
+    """
+
+    name: str
+    type: str
+    description: str
+    required: bool = True
+
+
+@dataclass(frozen=True)
+class ToolDefinition:
+    """Describes an AI tool that the model can invoke.
+
+    Attributes:
+        name: Unique tool identifier (e.g., 'list_files', 'upload_file').
+        description: Human-readable description of what the tool does.
+        parameters: List of ToolParameter describing the tool's signature.
+    """
+
+    name: str
+    description: str
+    parameters: list[ToolParameter] = field(default_factory=list)
