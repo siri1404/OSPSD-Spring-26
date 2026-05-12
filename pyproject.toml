@@ -199,9 +199,25 @@ ignore_missing_imports = true
 module = ["prometheus_client", "prometheus_client.*"]
 ignore_missing_imports = true
 
-# Pytest fixtures don't require typed decorators
 [[tool.mypy.overrides]]
-module = ["tests.*", "components.*.tests.*"]
+module = ["cloud_storage_api", "cloud_storage_api.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["fastapi", "fastapi.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["starlette", "starlette.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["dotenv", "dotenv.*"]
+ignore_missing_imports = true
+
+# Pytest fixtures and FastAPI decorators don't require typed decorators
+[[tool.mypy.overrides]]
+module = ["tests.*", "components.*.tests.*", "cloud_storage_service.main", "components.cloud_storage_service.main"]
 disallow_untyped_decorators = false
 
 # Auto-generated OpenAPI client: incomplete type annotations

@@ -252,10 +252,7 @@ class GeminiAiClient(AiClientApi):
             "Avoid conversational filler and extra commentary."
         )
         return genai_types.GenerateContentConfig(
-            tools=cast(
-                "list[genai_types.Tool | Any]",
-                get_tool_declarations(),
-            ),
+            tools=cast("list[genai_types.Tool | Any]", get_tool_declarations()),
             system_instruction=system_instruction,
         )
 

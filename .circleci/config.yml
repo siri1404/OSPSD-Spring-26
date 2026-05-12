@@ -118,7 +118,7 @@ jobs:
           name: "MkDocs Build"
           command: |
             source .venv/bin/activate
-            mkdocs build 
+            mkdocs build --strict
       - store_artifacts:
           path: site
           destination: docs-site

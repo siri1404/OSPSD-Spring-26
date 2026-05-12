@@ -35,13 +35,6 @@ info = adapter.upload_obj(
 )
 print(f"Uploaded: {info.object_name}, Size: {info.size_bytes}")
 
-# Upload from local file
-info = adapter.upload_file(
-    container=container,
-    local_path="local/report.pdf",
-    remote_path="reports/report.pdf",
-)
-
 # Download to local file
 download_info = adapter.download_file(
     container=container,

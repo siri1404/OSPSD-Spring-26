@@ -1,32 +1,44 @@
 # CircleCI Setup
 
-This document explains how to configure CircleCI for the Cloud Storage Client project with GCP.
+This document explains how to configure CircleCI for the Cloud Storage Client project with GCP, AI, and deployment integration.
 
 ## Overview
 
-The pipeline is defined in `.circleci/config.yml` and runs on every branch except `main`. It has seven jobs:
+The pipeline is defined in `.circleci/config.yml` and runs on every branch except `main`. It has nine jobs:
 
 | Job | What it does |
 |---|---|
 | `build` | Installs `uv`, creates the virtualenv, installs all packages, persists the workspace |
 | `lint` | `ruff check .` + `ruff format --check .` |
-| `typecheck` | `mypy components/` (strict) |
-| `unit_test` | `pytest components/` with coverage — must reach 85 % |
-| `integration_test` | `pytest tests/integration/` — no credentials needed |
-| `e2e_test` | `pytest tests/e2e/` — skips credential-dependent tests when env vars are absent |
-| `check_render_deploy` | Polls Render API to verify deployment succeeded (only on `hw-2` and `hw-3` branches) |
+| `typecheck` | `mypy .` (strict) |
+| `unit_test` | `pytest components/` with coverage — must reach 85% |
+| `integration_test` | `pytest tests/integration/` — no credentials needed (AI/chat/storage mocked at DI boundary) |
+| `mkdocs_build` | `mkdocs build --strict` — validates documentation builds cleanly |
+| `terraform_plan` | `terraform init`, `fmt -check`, `validate`, `plan` — IaC validation on every push |
+| `check_render_deploy` | Polls Render API to verify deployment succeeded (hw-3 branch only) |
+| `post_deploy_e2e` | `pytest tests/e2e/test_e2e_workflow.py` against the live deployed service (hw-3 branch only) |
+
+Note: `terraform_apply` is currently disabled due to a Render free-tier provider limitation. See [deployment.md](deployment.md) for details.
 
 ## Pipeline
 
-All jobs run sequentially on every non-`main` branch:
-
 ```
-build → lint ─┐
-              ├─ (parallel) → unit_test → integration_test → e2e_test → check_render_deploy
-typecheck ────┘
+build → lint ─────────────────────┐
+      - typecheck                 │
+      - unit_test → integration_test ──┐
+      - mkdocs_build              │    │
+              └─ terraform_plan ──┘    │
+                                       │
+              (hw-3 branch only)       │
+                                       ↓
+                            check_render_deploy
+                                       ↓
+                            post_deploy_e2e
 ```
 
-`lint` and `typecheck` both depend on `build` and run in parallel with each other. `unit_test` also depends on `build`.  `integration_test` requires `unit_test`.  `e2e_test` requires `integration_test`.
+`lint`, `typecheck`, `unit_test`, and `mkdocs_build` all depend on `build` and run in parallel. `integration_test` requires `unit_test`. `terraform_plan` requires `lint`.
+
+On `hw-3` only: `check_render_deploy` runs after `build` + `integration_test`, polls the Render API until the deploy is live, then `post_deploy_e2e` runs E2E tests against the deployed service.
 
 ## Quick Setup
 
@@ -37,21 +49,29 @@ typecheck ────┘
 3. CircleCI auto-detects `.circleci/config.yml` in the repo
 4. Click **Set Up Project**
 
-### 2. Environment Variables
+### 2. CircleCI Context: render-deploy
 
-Add these in CircleCI **Project Settings** → **Environment Variables**:
+Create a context called `render-deploy` in CircleCI (Organization Settings → Contexts) and add these secrets:
 
-| Variable | Description | Required for |
+| Variable | Description | Consumer |
 |---|---|---|
-| `GCP_SERVICE_KEY` | Base64-encoded GCP service account JSON key | E2E credential tests |
-| `GCS_BUCKET_NAME` | Your test GCS bucket name | E2E credential tests |
-| `GOOGLE_CLOUD_PROJECT` | Your GCP project ID | E2E credential tests |
-| `RENDER_API_KEY` | Render Personal Access Token | Deploy verification |
-| `RENDER_SERVICE_ID` | Render web service ID | Deploy verification |
+| `RENDER_API_KEY` | Render Personal Access Token | Terraform provider + `check_render_deploy` |
+| `RENDER_OWNER_ID` | Render team/user ID (`tea-...` or `usr-...`) | Terraform provider |
+| `RENDER_SERVICE_ID` | Cloud storage Render service ID | `check_render_deploy` |
+| `RENDER_SERVICE_URL` | Public URL of deployed service | `post_deploy_e2e` |
+| `DEV_AUTH_TOKEN` | Bearer token for E2E test auth | `post_deploy_e2e` |
+| `GCS_BUCKET_NAME` | GCS bucket for E2E storage ops | `post_deploy_e2e` |
+| `TF_VAR_GCP_SERVICE_KEY` | Base64-encoded GCP service account JSON | Terraform |
+| `TF_VAR_GCS_BUCKET_NAME` | GCS bucket name | Terraform |
+| `TF_VAR_GOOGLE_CLOUD_PROJECT` | GCP project ID | Terraform |
+| `TF_VAR_GOOGLE_OAUTH_CLIENT_ID` | OAuth client ID | Terraform |
+| `TF_VAR_GOOGLE_OAUTH_CLIENT_SECRET` | OAuth client secret | Terraform |
+| `TF_VAR_GEMINI_API_KEY` | Google Gemini API key | Terraform |
+| `TF_VAR_SLACK_BOT_TOKEN` | Slack bot token for notifications | Terraform |
+| `TF_VAR_CHAT_CHANNEL_ID` | Slack channel ID | Terraform |
+| `TF_VAR_GRAFANA_ADMIN_PASSWORD` | Grafana admin password | Terraform |
 
-E2E tests that need credentials **skip** cleanly when these are not set — the pipeline still passes without them.
-
-**To get `GCP_SERVICE_KEY`:**
+### 3. GCP Service Key Encoding
 
 ```bash
 # Linux / macOS
@@ -61,7 +81,7 @@ base64 -i service-account-key.json | tr -d '\n'
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("service-account-key.json"))
 ```
 
-Paste the output as the `GCP_SERVICE_KEY` value in CircleCI.
+Paste the output as the `TF_VAR_GCP_SERVICE_KEY` value in the `render-deploy` context.
 
 ## Local Development
 
@@ -70,17 +90,18 @@ Install dependencies, then run the same commands CircleCI uses:
 ```bash
 uv sync --all-packages --group dev
 uv run ruff check . && uv run ruff format --check .
-uv run mypy components/
+uv run mypy .
 uv run pytest components/ --cov=components/ --cov-fail-under=85
 uv run pytest tests/integration/ -v --no-cov
 uv run pytest tests/e2e/ -v --no-cov
+uv run mkdocs build --strict
 ```
 
 See [testing.md](testing.md) for the full list of test commands and marker shortcuts.
 
 ## Troubleshooting
 
-**"GCP_SERVICE_KEY not set" or e2e tests skip** — The structural e2e tests still pass; add the three env vars to CircleCI to enable the full workflow tests.
+**"GCS_BUCKET_NAME not set" or e2e tests skip** — The structural e2e tests still pass; add the env vars to the `render-deploy` context to enable the full workflow tests.
 
 **"Permission denied" in E2E tests** — Ensure the service account has the `Storage Object Admin` role on the test bucket.
 
@@ -88,12 +109,15 @@ See [testing.md](testing.md) for the full list of test commands and marker short
 
 **`ruff format --check .` fails** — Run `uv run ruff format .` locally, commit the result.
 
-**`mypy components/` fails** — Mypy runs in strict mode. Fix all reported type errors before pushing.
+**`mypy .` fails** — Mypy runs in strict mode. Fix all reported type errors before pushing.
 
-**Coverage below 85 %** — `pytest components/ --cov=components/ --cov-report=term-missing` shows uncovered lines.
+**Coverage below 85%** — `pytest components/ --cov=components/ --cov-report=term-missing` shows uncovered lines.
+
+**`terraform_apply` fails with "maintenance_mode"** — Known Render free-tier limitation. See [deployment.md](deployment.md).
 
 ## Security Notes
 
 - Never commit service account keys to Git
 - CircleCI encrypts environment variables at rest
+- All secrets go in the `render-deploy` context, not in project-level env vars
 - Service account keys should have only `Storage Object Admin` on the test bucket — no broader project permissions

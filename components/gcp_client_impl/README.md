@@ -21,6 +21,7 @@ from gcp_client_impl.client import GCPCloudStorageClient
 client = GCPCloudStorageClient(
     project_id='my-project',                # optional
     credentials_path='/path/key.json',      # optional
+    service_key='{"type":"service_account",...}',  # optional
     oauth_token='ya29....',                 # optional
 )
 ```
@@ -29,6 +30,7 @@ Constructor parameters:
 
 - `project_id: str | None`
 - `credentials_path: str | None`
+- `service_key: str | None` — raw JSON or base64-encoded JSON
 - `oauth_token: str | None`
 
 Important: there is no `bucket_name` constructor argument. The container/bucket is passed per method.

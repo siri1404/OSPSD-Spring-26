@@ -16,44 +16,38 @@ cd OSPSD-Spring-26
 uv sync --all-packages --group dev
 ```
 
-This installs all workspace packages (`gcp_client_impl`, `cloud_storage_adapter`, `cloud_storage_service`, `cloud_storage_service_api_client`) plus the shared `cloud_storage_api` git dependency and all dev tools (`pytest`, `ruff`, `mypy`, etc.).
+This installs all workspace packages (`ai_client_api`, `gemini_ai_client_impl`, `chat_client_wrapper`, `gcp_client_impl`, `cloud_storage_adapter`, `cloud_storage_service`, `cloud_storage_service_api_client`) plus the shared `cloud_storage_api` and `chat_client_api` git dependencies and all dev tools (`pytest`, `ruff`, `mypy`, etc.).
 
 ## Project Structure
 
 ```
 OSPSD-Spring-26/
 ├── components/
+│   ├── ai_client_api/                      # AI interface (abstract ABC)
+│   ├── gemini_ai_client_impl/              # Gemini implementation with tool calling
+│   ├── chat_client_wrapper/                # Notification wrapper (cross-vertical)
 │   ├── gcp_client_impl/                    # GCP implementation of shared ABC
-│   │   ├── src/gcp_client_impl/
-│   │   │   ├── client.py                   # GCPCloudStorageClient
-│   │   │   └── __init__.py
-│   │   └── tests/
 │   ├── cloud_storage_adapter/              # HTTP adapter implementing shared ABC
-│   │   ├── src/cloud_storage_adapter/
-│   │   │   ├── adapter.py                  # CloudStorageAdapter
-│   │   │   └── __init__.py
-│   │   └── tests/
-│   ├── cloud_storage_service/              # FastAPI service wrapping GCP impl
-│   │   ├── src/cloud_storage_service/
-│   │   │   ├── main.py                     # Endpoints
-│   │   │   ├── auth.py                     # OAuth 2.0
-│   │   │   ├── models.py                   # Pydantic models
-│   │   │   └── sessions.py                 # Session store
-│   │   └── tests/
+│   ├── cloud_storage_service/              # FastAPI service with AI, auth, observability
 │   └── cloud_storage_service_api_client/   # Auto-generated OpenAPI client
+├── infrastructure/                         # Terraform IaC for Render
+├── monitoring/                             # Prometheus + Grafana config
 ├── tests/
-│   ├── integration/
-│   │   └── test_di.py                      # Shared contract compliance tests
-│   └── e2e/
-│       └── test_e2e.py                     # Full workflow tests
+│   ├── integration/                        # Contract compliance + AI/chat flows
+│   ├── e2e/                                # Full workflow tests (local + deployed)
+│   └── mocks/                              # Reusable mock implementations
 ├── docs/
 ├── .circleci/
 │   └── config.yml
 ├── pyproject.toml                          # Workspace config, ruff, mypy, pytest, coverage
+├── Dockerfile                              # FastAPI service container
 └── main.py                                 # Sanity check entry point
 ```
 
-External dependency: The shared `cloud_storage_api` interface is pulled from https://github.com/2SpaceMasterRace/ospsd-cloud-storage (pinned to `v1.0.0`).
+External dependencies:
+
+- `cloud_storage_api` — shared storage ABC from [ospsd-cloud-storage](https://github.com/2SpaceMasterRace/ospsd-cloud-storage) (pinned to `v1.0.0`)
+- `chat_client_api` — shared chat ABC from Team 9 (pinned to commit rev)
 
 ## Development Workflow
 

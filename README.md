@@ -8,8 +8,6 @@
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-brightgreen)
 
-
-
 ## Team Members
 
 1. Pooja Gayathri Kanala
@@ -27,6 +25,9 @@ This project implements a **provider-agnostic cloud storage client** with modula
 The project demonstrates clean architectural patterns through:
 - Abstract Base Classes for interface contracts
 - Shared API contracts across teams via pinned git dependency
+- AI-powered natural language interface with tool calling
+- Cross-vertical integration with Team 9's chat service
+- Infrastructure as Code with Terraform and Prometheus/Grafana observability
 - Comprehensive testing strategy (unit, integration, E2E)
 - CI/CD automation with CircleCI
 
@@ -34,7 +35,7 @@ The project demonstrates clean architectural patterns through:
 
 ## Architecture Overview
 
-This repository contains **five local components** plus two **external shared API dependencies**:
+This repository contains seven local components plus two external shared API dependencies:
 
 ### External Shared APIs
 
@@ -63,9 +64,31 @@ The cross-team chat interface from Team 9. Enables pluggable chat integrations (
 - `Channel` dataclass for channel information
 - Shared exception taxonomy (`ChannelNotFoundError`, `MessageNotFoundError`, etc.)
 
-**Source of truth:** `chat-client-api = { git = "https://github.com/HarshithKoriRaj/Shared-API.git", tag = "v0.1.0" }`
+**Source of truth:** `chat-client-api = { git = "https://github.com/HarshithKoriRaj/Shared-API.git", rev = "ebb37e189065760f2090f1488d376485b7b56b20" }`
 
-### Component 1: `chat_client_wrapper` (Notification Formatter)
+### Component 1: ai_client_api (AI Interface)
+
+Abstract interface for AI client implementations with tool calling support.
+
+**Key Features:**
+- `AiClientApi` ABC with `send_message(prompt, context) -> str` and `tools() -> list[ToolDefinition]`
+- Framework-free — no provider SDK leakage into the interface package
+- Shared models: `AIResponse` (text + telemetry), `ToolDefinition`, `ToolParameter`
+- Same interface/impl separation pattern as the storage vertical
+
+### Component 2: gemini_ai_client_impl (AI Implementation)
+
+Concrete AI client using Google's Gemini API with tool calling for cloud storage operations.
+
+**Key Features:**
+- Implements `AiClientApi` against Gemini 2.5 Flash
+- 6 storage tools: `list_files`, `get_file_info`, `delete_file`, `upload_file`, `download_file`, `summarize_file`
+- Pydantic-validated tool arguments (`ListFilesArgs`, `DeleteFileArgs`, etc.)
+- Bounded tool-call loop (max 10 iterations) with `ToolLoopExhaustedError`
+- PDF summarization via base64-encoded binary payloads
+- `send_message_with_metadata()` returns `AIResponse` with full telemetry
+
+### Component 3: chat_client_wrapper (Notification Formatter)
 
 Wrapper providing a simple notification interface on top of Team 9's `ChatClient` abstraction.
 
@@ -76,47 +99,76 @@ Wrapper providing a simple notification interface on top of Team 9's `ChatClient
 - Error resilience: notifications fail gracefully without disrupting storage operations
 - Pluggable: works with any team that implements the shared `ChatClient` interface
 
-### Component 2: `gcp_client_impl` (Implementation)
+### Component 4: gcp_client_impl (Storage Implementation)
 
 Google Cloud Storage implementation of the abstract interface.
 
 **Key Features:**
 - Full GCS operations: upload, download, list, delete, metadata retrieval
-- Multiple authentication modes: service account file, environment variable JSON, Application Default Credentials
+- Multiple authentication modes: OAuth token, service account file, base64-encoded JSON, Application Default Credentials
 - Configuration via environment variables with constructor argument overrides
-- Comprehensive error handling with clear messages
+- Comprehensive error handling with read/write path distinction
 
-### Component 3: `cloud_storage_adapter` (HTTP Adapter)
+### Component 5: cloud_storage_adapter (HTTP Adapter)
 
 HTTP wrapper implementing `CloudStorageClient` by proxying requests to the cloud storage service via OpenAPI client.
 
 **Key Features:**
-- Wraps service endpoints as CloudStorageClient operations
-- Type-safe async HTTP communication with generated OpenAPI client
+- Wraps service endpoints as `CloudStorageClient` operations
+- Type-safe synchronous HTTP communication with generated OpenAPI client
 - Proper HTTP status code handling (200, 204, 404, 400, 500, 507)
-- Metadata extraction from response headers
+- Container-not-found vs object-not-found disambiguation on 404
 - Configurable service base URL (default: local service)
 
-### Component 4: `cloud_storage_service` (FastAPI Service)
+### Component 6: cloud_storage_service (FastAPI Service)
 
 FastAPI microservice exposing cloud storage operations via REST endpoints with OAuth 2.0 authentication.
 
 **Key Features:**
-- 8 REST endpoints: login, callback, upload, download, list, delete, head, health
-- OAuth 2.0 authentication flow with state management
-- Bearer token validation for protected storage routes
-- Pluggable backend using the shared `CloudStorageClient` contract
-- Pydantic models for request/response validation
+- 12 REST endpoints: `/health`, `/`, `/auth/login`, `/auth/callback`, `/auth/logout`, `/upload`, `/download/{key}`, `/list`, `/delete/{key}`, `/head/{key}`, `/ai/chat`, `/metrics`
+- OAuth 2.0 authentication flow with CSRF state management
+- AI-powered natural language interface at `/ai/chat` with tool calling
+- Prometheus telemetry middleware with latency, success/failure, and AI tool metrics
+- Chat notifications via Slack on storage events and AI actions
+- Pydantic models for request/response validation (`extra="forbid"`)
 
-### Component 5: `cloud_storage_service_api_client` (Generated API Client)
+### Component 7: cloud_storage_service_api_client (Generated API Client)
 
-Type-safe OpenAPI-generated async HTTP client for the cloud storage service.
+Type-safe OpenAPI-generated HTTP client for the cloud storage service.
 
 **Key Features:**
 - Auto-generated from service OpenAPI schema
 - Pydantic models for all operations
-- Async/await support for non-blocking I/O
 - Used by cloud_storage_adapter to communicate with service
+
+---
+
+## AI Integration: Gemini Tool Calling
+
+The service integrates Google's Gemini API via two new HW3 components:
+
+- **ai_client_api** — Abstract interface (`AiClientApi` ABC) with `send_message(prompt, context) -> str` and `tools() -> list[ToolDefinition]`. Framework-free; no provider SDK leakage.
+- **gemini_ai_client_impl** — Concrete implementation using `google-genai`. Supports 6 storage tools (`list_files`, `get_file_info`, `delete_file`, `upload_file`, `download_file`, `summarize_file`) with Pydantic-validated arguments.
+
+The AI client is injected into the FastAPI service via `Depends(get_ai_client)`. The `/ai/chat` endpoint accepts natural-language prompts, dispatches tool calls to the storage client, and returns structured responses with telemetry (`action_taken`, `tool_calls`).
+
+### AI Tool Dispatch Graph
+
+```
+POST /ai/chat (prompt)
+  - GeminiAiClient._run_send_message()
+    - Gemini API returns function_call(name, args)
+    - _dispatch_tool(name, args)
+      - dispatch_tool_call(name, args, storage_client)
+        - Pydantic validation (ListFilesArgs, DeleteFileArgs, etc.)
+        - _list_files() / _delete_file() / _upload_file() / ...
+          - CloudStorageClient.list_files() / .delete_file() / ...
+            - GCPCloudStorageClient (real GCS operations)
+    - Tool result → Gemini API (next turn)
+  - Final text response
+    - ai_tool_calls_total counter incremented
+    - ChatNotificationWrapper.notify() (cross-vertical)
+```
 
 ---
 
@@ -333,9 +385,49 @@ The shared interface defines cloud storage operations for all teams. This reposi
 Google Cloud Storage implementation. See [components/gcp_client_impl/README.md](components/gcp_client_impl/README.md) for configuration and authentication details.
 
 **Authentication Priority:**
-1. `credentials_path` argument or `GOOGLE_APPLICATION_CREDENTIALS` env var (service account file)
-2. `GCP_SERVICE_KEY` env var (raw or base64-encoded service account JSON)
-3. Application Default Credentials (gcloud login, Workload Identity, etc.)
+1. OAuth token (`oauth_token` argument or `GCP_OAUTH_TOKEN` env var)
+2. Service account file (`credentials_path` argument or `GOOGLE_APPLICATION_CREDENTIALS` env var)
+3. Inline service account JSON (`service_key` argument or `GCP_SERVICE_KEY` env var — raw or base64-encoded)
+4. Application Default Credentials (gcloud login, Workload Identity, etc.)
+
+---
+
+## Documentation
+
+Full documentation is available in the `docs/` directory:
+
+- [Landing Page](docs/index.md) — Quick navigation and user-specific guidance
+- [Contributing Guide](docs/CONTRIBUTING.md) — Development workflow, commit standards, PR process
+- [Testing Guide](docs/testing.md) — Test execution, environment setup, credentials, debugging
+- [CircleCI Setup](docs/circleci-setup.md) — CI configuration, environment variables, troubleshooting
+- [Project Structure](docs/structure.md) — Directory layout and component organization
+- [Architecture & Design](docs/design.md) — Design patterns, authentication modes, and extensibility
+- [Deployment](docs/deployment.md) — IaC bootstrap and Render deployment
+- [Observability](docs/observability.md) — Prometheus metrics and Grafana dashboards
+
+**Component-Specific Documentation:**
+- [AI Client API](components/ai_client_api/README.md) — Abstract AI interface and shared models
+- [Gemini AI Client](components/gemini_ai_client_impl/README.md) — Gemini implementation with tool calling
+- [Cloud Storage Adapter](components/cloud_storage_adapter/README.md) — Service-backed shared API implementation
+- [Cloud Storage Service](components/cloud_storage_service/README.md) — FastAPI endpoints and auth flow
+- [Cloud Storage Service API Client](components/cloud_storage_service_api_client/README.md) — Generated OpenAPI client package
+- [GCP Implementation](components/gcp_client_impl/README.md) — Configuration, authentication setup, error handling
+
+---
+
+## Observability & Monitoring
+
+The deployed service emits Prometheus metrics at `/metrics`:
+
+- **storage_service_requests_total** — request count by endpoint, method, status_code, and error_class (success/domain/infra)
+- **storage_service_request_latency_seconds** — latency histogram (p50/p95/p99)
+- **storage_service_ai_tool_calls_total** — AI tool dispatch count by tool_name and status
+
+Metrics are scraped by Prometheus and visualized in a Grafana dashboard with 7 panels covering latency, request rate, error rate (4xx/5xx), AI tool success/failure, overall success rate, and request distribution by endpoint.
+
+- **Grafana Dashboard:** https://cloud-service-grafana.onrender.com
+- **Prometheus:** https://cloud-service-prometheus.onrender.com
+- **Metrics endpoint:** https://cloud-storage-service-mcni.onrender.com/metrics
 
 ---
 
@@ -402,35 +494,20 @@ The key insight: **Chat is pluggable.** We depend on Team 9's abstract `ChatClie
 
 ---
 
-## Documentation
-
-Full documentation is available in the `docs/` directory:
-
-- [Landing Page](docs/index.md) — Quick navigation and user-specific guidance
-- [Contributing Guide](docs/CONTRIBUTING.md) — Development workflow, commit standards, PR process
-- [Testing Guide](docs/testing.md) — Test execution, environment setup, credentials, debugging
-- [CircleCI Setup](docs/circleci-setup.md) — CI configuration, environment variables, troubleshooting
-- [Project Structure](docs/structure.md) — Directory layout and component organization
-- [Architecture & Design](docs/design.md) — Design patterns, authentication modes, and extensibility
-
-**Component-Specific Documentation:**
-- [Cloud Storage Adapter](components/cloud_storage_adapter/README.md) — Service-backed shared API implementation
-- [Cloud Storage Service](components/cloud_storage_service/README.md) — FastAPI endpoints and auth flow
-- [Cloud Storage Service API Client](components/cloud_storage_service_api_client/README.md) — Generated OpenAPI client package
-- [GCP Implementation](components/gcp_client_impl/README.md) — Configuration, authentication setup, error handling
-
----
-
 ## CI/CD Pipeline
 
 CircleCI continuously validates code on the `hw-3` branch:
 
-- Build: Environment setup with `uv`
-- Lint: Code style checking with `ruff`
-- Type Check: Static types with `mypy --strict`
-- Unit Tests: Fast component tests with coverage reporting
-- Integration Tests: Component interaction and contract tests
-- E2E Tests: Real GCS workflows (protected branches only)
+- **Build:** Environment setup with `uv`
+- **Lint:** Code style checking with `ruff`
+- **Type Check:** Static types with `mypy --strict`
+- **Unit Tests:** Fast component tests with coverage reporting
+- **Integration Tests:** Component interaction and contract tests
+- **Terraform Plan:** IaC validation on every push
+- **E2E Tests:** Runs against the deployed Render service (hw-3 branch only)
+- **Deploy Check:** Polls Render API to confirm deployment succeeded
+
+Code deploys via Render's `auto_deploy`; `post_deploy_e2e` validates the live service after deployment.
 
 View pipeline status: [CircleCI Project](https://circleci.com/gh/siri1404/OSPSD-Spring-26)
 
@@ -475,11 +552,29 @@ See the GCP implementation as a template.
 ## Deployment & Verification
 
 ### Platform
- - **Live URL:** https://cloud-storage-service-mcni.onrender.com
- - **Docs:** https://cloud-storage-service-mcni.onrender.com/docs
- - **OAuth Login Endpoint:** https://cloud-storage-service-mcni.onrender.com/auth/login
+
+- **Live URL:** https://cloud-storage-service-mcni.onrender.com
+- **API Docs:** https://cloud-storage-service-mcni.onrender.com/docs
+- **Health Check:** https://cloud-storage-service-mcni.onrender.com/health
+- **Grafana Dashboard:** https://cloud-service-grafana.onrender.com
+- **Prometheus:** https://cloud-service-prometheus.onrender.com
+- **Metrics:** https://cloud-storage-service-mcni.onrender.com/metrics
+
+### IaC Bootstrap
+
+Infrastructure is managed via Terraform in `infrastructure/`:
+
+```bash
+cd infrastructure
+terraform init
+terraform plan    # Review changes
+terraform apply   # Deploy to Render
+```
+
+Requires `RENDER_API_KEY` and `RENDER_OWNER_ID` environment variables. See `infrastructure/variables.tf` for all required variables.
 
 ### Required Environment Variables
+
 | Variable | Purpose |
 | --- | --- |
 | `GCP_SERVICE_KEY` | Base64-encoded GCP service-account JSON used by the storage client |
@@ -487,19 +582,16 @@ See the GCP implementation as a template.
 | `GOOGLE_CLOUD_PROJECT` | GCP project that owns the bucket |
 | `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth credentials for browser auth flows |
 | `GOOGLE_OAUTH_REDIRECT_URI` | Redirect URL Render should call after auth (defaults to the hosted `/auth/callback`) |
+| `GEMINI_API_KEY` | Google Gemini API key for AI chat |
+| `SLACK_BOT_TOKEN` | Slack bot token for chat notifications |
+| `CHAT_CHANNEL_ID` | Slack channel ID for notifications |
 | `DEV_AUTH_TOKEN` | Static bearer token for local and smoke testing |
 | `RENDER_API_KEY` | (CircleCI only) Render Personal Access Token with deploy scope |
 | `RENDER_SERVICE_ID` | (CircleCI only) ID of the Render web service |
 | `RENDER_SERVICE_URL` | (CircleCI only) Base URL for smoke test (e.g., https://cloud-storage-service-mcni.onrender.com) |
 
-### CI/CD Pipeline (CircleCI)
-- On every push to `hw-3`:
-  - Build, lint, typecheck, unit/integration/e2e test
-  - Deploys to Render using API
-  - Verifies `/health` endpoint
-- See `.circleci/config.yml` and [docs/circleci-setup.md](docs/circleci-setup.md) for details.
-
 ### Manual API Verification
+
 After deployment, you can verify the service is working with these commands:
 
 ```bash
@@ -523,6 +615,18 @@ curl -X DELETE https://cloud-storage-service-mcni.onrender.com/delete/e2e-manual
 ```
 
 Replace `YOUR_TOKEN` with your configured bearer token.
+
+---
+
+## Known Limitations
+
+### Terraform apply on Render free tier
+
+The `terraform_apply` CI job is currently disabled. The `render-oss/render` v1.8.0 Terraform provider unconditionally sends `maintenance_mode` in update payloads, which Render's free-tier API rejects. Code deploys continue via Render's `auto_deploy`. `terraform_plan` validates IaC on every push. See `.circleci/config.yml` for details.
+
+### Prometheus scraping on Render free tier
+
+Render's free tier does not support private service-to-service networking. Prometheus scrapes the cloud storage service via its public HTTPS URL. If the service is sleeping (free-tier cold start), metrics may be intermittently unavailable.
 
 ---
 
