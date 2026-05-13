@@ -1,7 +1,5 @@
 # OSPSD Spring '26 - Cloud Storage Client
 
-> **⚠️ HW3 Status:** This project has been refactored to align with the shared Cloud Storage API contract (v1.0.0).  
-> See [PLAN_OF_ACTION.md](PLAN_OF_ACTION.md) and [docs/design.md](docs/design.md) for details.
 
 [![CircleCI](https://dl.circleci.com/status-badge/img/gh/siri1404/OSPSD-Spring-26/tree/hw-3.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/siri1404/OSPSD-Spring-26/tree/hw-3)
 ![Coverage](https://img.shields.io/badge/coverage-85%25%2B-brightgreen)
@@ -34,6 +32,88 @@ The project demonstrates clean architectural patterns through:
 ---
 
 ## Architecture Overview
+
+```mermaid
+flowchart LR
+  %% Layer 1: Users
+  User["Users"]
+  
+  %% Layer 2: FastAPI Service (core)
+  Service["cloud_storage_service<br/>FastAPI"]
+  
+  %% Layer 3: Abstract Interfaces (Contracts)
+  CloudStorageAPI["cloud_storage_api<br/>CloudStorageClient"]
+  AiAPI["ai_client_api<br/>AiClientApi"]
+  ChatAPI["chat_client_api<br/>ChatClient"]
+  
+  %% Layer 4: Implementations
+  GCPImpl["gcp_client_impl<br/>GCP Storage"]
+  AdapterImpl["cloud_storage_adapter<br/>HTTP Adapter"]
+  GeminiImpl["gemini_ai_client_impl<br/>Gemini AI"]
+  ChatImpl["chat_client_wrapper<br/>Slack"]
+  
+  %% Layer 5: Generated Code
+  APIClient["cloud_storage_service_api_client<br/>OpenAPI Client"]
+  
+  %% Layer 6: External Services
+  GCS["Google Cloud Storage"]
+  GeminiAPI["Gemini API"]
+  SlackAPI["Slack API"]
+  
+  %% Layer 7: Observability & Deployment
+  Prometheus["Prometheus"]
+  Grafana["Grafana"]
+  CircleCI["CircleCI"]
+  Terraform["Terraform"]
+  Render["Render"]
+  
+  %% Connections: User → Service
+  User -->|REST calls| Service
+  
+  %% Connections: Service → Abstractions
+  Service -->|depends on| CloudStorageAPI
+  Service -->|depends on| AiAPI
+  Service -->|depends on| ChatAPI
+  
+  %% Connections: Abstractions → Implementations
+  CloudStorageAPI -->|implemented by| GCPImpl
+  CloudStorageAPI -->|implemented by| AdapterImpl
+  AiAPI -->|implemented by| GeminiImpl
+  ChatAPI -->|wrapped by| ChatImpl
+  
+  %% Connections: Implementations → External
+  GCPImpl -->|reads/writes| GCS
+  GeminiImpl -->|calls| GeminiAPI
+  ChatImpl -->|sends to| SlackAPI
+  
+  %% Connections: Adapter flow
+  AdapterImpl -->|uses| APIClient
+  APIClient -->|calls| Service
+  
+  %% Connections: Observability
+  Service -->|emits metrics| Prometheus
+  Prometheus -->|scraped by| Grafana
+  
+  %% Connections: Deployment
+  Terraform -->|provisions| Render
+  CircleCI -->|deploys| Render
+  Render -->|hosts| Service
+  Render -->|hosts| Prometheus
+  Render -->|hosts| Grafana
+  
+  %% Styling
+  classDef interface fill:#e1f5ff,stroke:#0277bd,stroke-width:2px
+  classDef implementation fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+  classDef external fill:#fff3e0,stroke:#e65100,stroke-width:2px
+  classDef service fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+  classDef infra fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+  
+  class CloudStorageAPI,AiAPI,ChatAPI interface
+  class GCPImpl,AdapterImpl,GeminiImpl,ChatImpl,APIClient implementation
+  class GCS,GeminiAPI,SlackAPI external
+  class Service service
+  class Prometheus,Grafana,CircleCI,Terraform,Render infra
+```
 
 This repository contains seven local components plus two external shared API dependencies:
 
@@ -281,6 +361,92 @@ Get-Content .env | ForEach-Object {
     }
 }
 ```
+
+## Environment Variables
+
+The application has a small number of runtime variables and a few test/deployment variables. These are the ones the code actually reads.
+
+### Runtime and Local Development
+
+| Variable | Used By | Required | Purpose |
+|---|---|---:|---|
+| `GCS_BUCKET_NAME` | `cloud_storage_service` | Yes | Default storage bucket/container. |
+| `GOOGLE_CLOUD_PROJECT` | `gcp_client_impl` | No | GCP project ID used by the storage client. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `gcp_client_impl` | No | Path to a service account JSON file. |
+| `GCP_SERVICE_KEY` | `gcp_client_impl`, deployment | No | Raw or base64-encoded service account JSON. |
+| `GCP_OAUTH_TOKEN` | `gcp_client_impl` | No | OAuth bearer token for GCS access. |
+| `GEMINI_API_KEY` | `gemini_ai_client_impl`, `cloud_storage_service` | Yes | Gemini API key for AI tool calling. |
+| `GOOGLE_OAUTH_CLIENT_ID` | `cloud_storage_service` | Yes | OAuth client ID for Google login. |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | `cloud_storage_service` | Yes | OAuth client secret for Google login. |
+| `GOOGLE_OAUTH_REDIRECT_URI` | `cloud_storage_service` | Yes | OAuth callback URL. |
+| `SLACK_BOT_TOKEN` | `cloud_storage_service`, `chat_client_wrapper` | No | Slack bot token for notifications. |
+| `CHAT_CHANNEL_ID` | `cloud_storage_service`, `chat_client_wrapper` | No | Slack channel used for notifications. |
+| `DEV_AUTH_TOKEN` | `cloud_storage_service` | No | Development/test bearer token bypass. |
+| `ENVIRONMENT` | `cloud_storage_service` | No | Enables dev/test auth bypass when set to `development` or `test`. |
+
+### Test and Local-Run Helpers
+
+| Variable | Used By | Purpose |
+|---|---|---|
+| `STAGING_SERVICE_URL` | `tests/e2e/test_e2e_workflow.py` | Base URL for the deployed or locally running service. |
+| `CLOUD_STORAGE_SERVICE_URL` | `components/cloud_storage_adapter/tests/test_adapter_integration.py` | Integration-test target for the adapter. |
+| `CLOUD_STORAGE_TEST_CONTAINER` | `components/cloud_storage_adapter/tests/test_adapter_integration.py` | Integration-test bucket/container name. |
+
+### Deployment and IaC
+
+| Variable | Used By | Purpose |
+|---|---|---|
+| `RENDER_API_KEY` | Terraform / CircleCI | Render API access token. |
+| `RENDER_OWNER_ID` | Terraform / CircleCI | Render account or team owner ID. |
+| `RENDER_SERVICE_ID` | Terraform / CircleCI | Existing Render service ID for import or deploy checks. |
+| `RENDER_SERVICE_URL` | CircleCI | Public URL used by post-deploy checks. |
+| `RENDER_REGION` | Terraform | Render region for services. |
+| `REPO_URL` | Terraform | Repository URL used by Render runtime_source. |
+| `GIT_BRANCH` | Terraform | Branch name Render tracks for auto-deploy. |
+| `GRAFANA_ADMIN_PASSWORD` | Terraform / Grafana | Initial Grafana admin password. |
+
+Deployment-only secrets and CI context details are documented in [docs/deployment.md](docs/deployment.md).
+
+## Local Endpoint Smoke Tests
+
+Start the service locally first:
+
+```bash
+uv run uvicorn cloud_storage_service.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+On Windows PowerShell, use `curl.exe` so the shell does not rewrite the command.
+
+```bash
+BASE_URL=http://localhost:8000
+TOKEN=${DEV_AUTH_TOKEN:-dev-token-12345}
+
+curl "$BASE_URL/health"
+curl "$BASE_URL/metrics"
+
+curl -X POST "$BASE_URL/upload" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "key=sample.txt" \
+  -F "file=@sample.txt"
+
+curl -H "Authorization: Bearer $TOKEN" "$BASE_URL/list"
+curl -H "Authorization: Bearer $TOKEN" "$BASE_URL/head/sample.txt"
+curl -H "Authorization: Bearer $TOKEN" "$BASE_URL/download/sample.txt" -o downloaded-sample.txt
+curl -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE_URL/delete/sample.txt"
+
+curl -X POST "$BASE_URL/ai/chat" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Container: $GCS_BUCKET_NAME" \
+  -d '{"prompt":"list all files in the bucket"}'
+```
+
+Expected behavior:
+
+- `/health` returns HTTP 200 without auth.
+- `/metrics` returns Prometheus text.
+- `/upload`, `/list`, `/head/{key}`, `/download/{key}`, `/delete/{key}` require a bearer token and a configured bucket.
+- `/ai/chat` requires `GEMINI_API_KEY` and a container name, and it should produce tool-driven actions rather than plain prose only.
 
 ---
 
