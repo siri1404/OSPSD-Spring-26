@@ -3,8 +3,6 @@ __pycache__/
 *.py[codz]
 *$py.class
 
-.DS_Store
-
 # C extensions
 *.so
 
@@ -138,11 +136,8 @@ celerybeat.pid
 
 # Environments
 .env
-.env.local
-.env.*.local
 .envrc
 .venv
-.venv-1/
 env/
 venv/
 ENV/
@@ -187,11 +182,10 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+.vscode/
+
+# macOS system files
+.DS_Store
 
 # Ruff stuff:
 .ruff_cache/
@@ -210,11 +204,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-# GCP credentials – never commit
+
+# Claude
+.claude/
+
+# OAuth credentials
 credentials.json
 token.json
-*.json.ci_backup
-service-account-key.json
-*.key
-.gcp/
-.gcp-local/
+

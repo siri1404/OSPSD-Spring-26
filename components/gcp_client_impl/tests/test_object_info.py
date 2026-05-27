@@ -9,7 +9,7 @@ import pytest
 from gcp_client_impl.client import GCPCloudStorageClient
 
 
-def _make_blob(  # noqa: PLR0913
+def _make_blob(
     *,
     name: str = "file.txt",
     size: int = 10,

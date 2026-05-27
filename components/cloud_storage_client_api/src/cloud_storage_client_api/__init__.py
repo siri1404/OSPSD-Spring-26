@@ -5,3 +5,7 @@ from cloud_storage_client_api.client import ObjectInfo as ObjectInfo
 from cloud_storage_client_api.di import get_client as get_client
 from cloud_storage_client_api.di import override_get_client as override_get_client
 from cloud_storage_client_api.di import unregister_get_client as unregister_get_client
+from cloud_storage_client_api.exceptions import CloudStorageError as CloudStorageError
+from cloud_storage_client_api.exceptions import ObjectNotFoundError as ObjectNotFoundError
+from cloud_storage_client_api.exceptions import StorageOperationError as StorageOperationError
+from cloud_storage_client_api.exceptions import StorageValidationError as StorageValidationError

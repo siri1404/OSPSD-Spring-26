@@ -19,21 +19,32 @@ dev = [
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-mock>=3.10.0",
+    "pytest-asyncio>=0.23.0",
     "ruff>=0.12.7",
     "types-requests>=2.32.4.20250611",
-    "google-cloud-storage>=2.10.0",
     "google-api-python-client-stubs>=1.30.0",
+    "openapi-python-client>=0.28.3",
+    "cloud-storage-client-api",
+    "gcp-client-impl",
+    "cloud-storage-service",
+    "cloud-storage-adapter",
+    "cloud-storage-service-api-client",
 ]
 
 # ============================================
 # UV WORKSPACE CONFIGURATION
 # ============================================
 [tool.uv.workspace]
-members = ["components/*"]
+members = [
+    "components/*",
+]
 
 [tool.uv.sources]
-cloud_storage_client_api = { workspace = true }
+cloud-storage-client-api = { workspace = true }
 gcp-client-impl = { workspace = true }
+cloud-storage-service = { workspace = true }
+cloud-storage-service-api-client = { workspace = true }
+cloud-storage-adapter = { workspace = true }
 
 # ============================================
 # RUFF CONFIGURATION
@@ -50,9 +61,19 @@ ignore = [
     "D213",    # multi-line-summary-second-line - Conflicts with D212
     "COM812",  # missing-trailing-comma - Conflicts with formatter
     "ISC001",  # single-line-implicit-string-concatenation - Conflicts with formatter
+    "FAST002", # FastAPI dependency injection pattern - intentional
+    "B008",    # FastAPI dependency injection pattern - intentional
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"main.py" = [
+    "E402",     # imports after path bootstrap - intentional
+    "BLE001",   # blind exception in sanity check - intentional
+    "T201",     # print equivalent - sys.stdout.write for demo output
+    "F401",     # unused imports - DI registration triggers side effects
+    "TC002",    # CloudStorageClient needed at runtime for FastAPI dependency injection
+]
+
 "tests/**/*.py" = [
     "S101",     # assert - required for pytest
     "D102",     # docstrings in methods - not required in tests
@@ -64,6 +85,7 @@ ignore = [
     "S106",     # hardcoded password - test credentials are fine
     "ARG001",   # unused arg - pytest fixtures
     "ARG002",   # unused method arg - pytest fixtures
+    "ARG005",   # unused lambda arg - test mocks have required signatures
     "TRY300",   # consider moving statement - test-specific patterns
     "BLE001",   # blind exception - acceptable in tests
     "PLC0415",  # import outside toplevel - OK in tests
@@ -71,6 +93,7 @@ ignore = [
     "PLW0108",  # lambda in tests - acceptable
     "TC003",    # Generator needed at runtime for pytest fixtures
     "F401",     # Can have unused imports in TYPE_CHECKING
+    "S603",     # subprocess call - test automation is intentional
 ]
 
 "components/**/tests/**/*.py" = [
@@ -84,6 +107,7 @@ ignore = [
     "S106",     # hardcoded password - test credentials are fine
     "ARG001",   # unused arg - pytest fixtures
     "ARG002",   # unused method arg - pytest fixtures
+    "ARG005",   # unused lambda arg - test mocks have required signatures
     "TRY300",   # consider moving statement - test-specific patterns
     "BLE001",   # blind exception - acceptable in tests
     "PLC0415",  # import outside toplevel - OK in tests
@@ -91,10 +115,27 @@ ignore = [
     "PLW0108",  # lambda in tests - acceptable
     "TC003",    # Generator needed at runtime for pytest fixtures
     "F401",     # Can have unused imports in TYPE_CHECKING
+    "DTZ005",   # datetime without timezone - test mocks
+    "FURB162",  # timezone replacement - test code
+    "S603",     # subprocess call - test automation is intentional
+    "S108",     # insecure temp files - test fixtures are fine
+    "PLR0913",  # too many args - test helper functions
 ]
 
 "**/gcp_client_impl/**/*.py" = [
     "ANN401",   # Any typing - necessary for external Google Cloud library objects without complete stubs
+]
+
+"**/cloud_storage_service/**/*.py" = [
+    "ANN401",   # Any typing - necessary for FastAPI request/response objects
+    "PLC0415",  # import inside function - intentional for performance/circular imports
+    "E402",     # module import not at top - intentional after env setup
+    "S105",     # possible hardcoded password - false positive for URLs/constants
+    "ARG001",   # unused function argument - FastAPI exception handler signature
+    "TRY301",   # abstract raise - FastAPI error handling pattern
+    "PLR2004",  # magic value in comparison - HTTP status codes
+    "DTZ005",   # datetime without timezone - acceptable for API responses
+    "TC003",    # move into type-checking block - runtime usage in Pydantic
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -114,6 +155,9 @@ ignore_missing_imports = false
 mypy_path = [
     "components/cloud_storage_client_api/src",
     "components/gcp_client_impl/src",
+    "components/cloud_storage_service/src",
+    "components/cloud_storage_service_api_client",
+    "components/cloud_storage_adapter/src",
 ]
 
 # Google Cloud libraries: google-api-python-client-stubs is installed for googleapiclient
@@ -122,6 +166,7 @@ mypy_path = [
 module = [
     "google.cloud.*",
     "google.auth.*",
+    "google.oauth2.*",
 ]
 ignore_missing_imports = true
 
@@ -130,14 +175,23 @@ ignore_missing_imports = true
 module = ["tests.*", "components.*.tests.*"]
 disallow_untyped_decorators = false
 
+# Auto-generated client: openapi-python-client output has incomplete type annotations
+[[tool.mypy.overrides]]
+module = ["cloud_storage_service_api_client.*", "components.cloud_storage_service_api_client.*"]
+ignore_errors = true
+
 # ============================================
 # PYTEST CONFIGURATION
 # ============================================
 [tool.pytest.ini_options]
 pythonpath = [
     ".",
+    "components/cloud_storage_adapter",
     "components/cloud_storage_client_api/src",
     "components/gcp_client_impl/src",
+    "components/cloud_storage_service/src",
+    "components/cloud_storage_service_api_client",
+    "components/cloud_storage_adapter/src",
 ]
 testpaths = ["tests", "components/*/tests"]
 python_files = ["test_*.py"]
@@ -171,6 +225,7 @@ omit = [
     "*/__pycache__/*",
     "*/main.py",
     "*/__main__.py",
+    "*/cloud_storage_service_api_client/*",
 ]
 
 [tool.coverage.report]

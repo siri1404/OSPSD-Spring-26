@@ -9,10 +9,11 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cloud_storage_client_api.exceptions import ObjectNotFoundError
 from gcp_client_impl.client import GCPCloudStorageClient
 
 
-def _make_blob(  # noqa: PLR0913
+def _make_blob(
     *,
     name: str = "folder/file.txt",
     size: int = 42,
@@ -83,7 +84,7 @@ class TestUploadFile:
 
         with patch("pathlib.Path.read_bytes", return_value=b"jpeg-bytes"):
             result = gcp_client.upload_file(
-                local_path="/tmp/photo.jpg",  # noqa: S108
+                local_path="/tmp/photo.jpg",
                 key="photo.jpg",
             )
 
@@ -93,7 +94,7 @@ class TestUploadFile:
         gcp_client._storage_client = _make_storage_client()
         with (
             patch("pathlib.Path.read_bytes", side_effect=FileNotFoundError("/nonexistent/file.txt")),
-            pytest.raises(FileNotFoundError, match=r"/nonexistent/file\.txt"),
+            pytest.raises(ObjectNotFoundError, match=r"/nonexistent/file\.txt"),
         ):
             gcp_client.upload_file(local_path="/nonexistent/file.txt", key="file.txt")
 
@@ -115,7 +116,7 @@ class TestDownloadBytes:
         blob.exists.return_value = False
         gcp_client._storage_client = _make_storage_client(_make_bucket(blob))
 
-        with pytest.raises(FileNotFoundError, match=r"missing\.txt"):
+        with pytest.raises(ObjectNotFoundError, match=r"missing\.txt"):
             gcp_client.download_bytes(key="missing.txt")
 
 
@@ -153,7 +154,7 @@ class TestDelete:
         blob.exists.return_value = False
         gcp_client._storage_client = _make_storage_client(_make_bucket(blob))
 
-        with pytest.raises(FileNotFoundError, match=r"gone\.txt"):
+        with pytest.raises(ObjectNotFoundError, match=r"gone\.txt"):
             gcp_client.delete(key="gone.txt")
 
 
