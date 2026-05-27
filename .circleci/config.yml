@@ -256,11 +256,7 @@ jobs:
 workflows:
   build_and_test:
     jobs:
-      - build:
-          filters:
-            branches:
-              ignore:
-                - main
+      - build
       - lint:
           requires:
             - build
@@ -282,10 +278,6 @@ workflows:
       - terraform_plan:
           requires:
             - lint
-          filters:
-            branches:
-              ignore:
-                - main
       # ────────────────────────────────────────────────────────────────
       # DISABLED: Terraform apply is broken on Render free tier.
       #
@@ -319,6 +311,7 @@ workflows:
             branches:
               only:
                 - hw-3
+                - main
       - post_deploy_e2e:
           context: render-deploy
           requires:
@@ -327,3 +320,4 @@ workflows:
             branches:
               only:
                 - hw-3
+                - main
