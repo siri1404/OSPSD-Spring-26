@@ -13,11 +13,18 @@ from ...types import UNSET, Response, Unset
 def _get_kwargs(
     *,
     prefix: str | Unset = "",
+    container: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
-
     params: dict[str, Any] = {}
 
     params["prefix"] = prefix
+
+    json_container: None | str | Unset
+    if isinstance(container, Unset):
+        json_container = UNSET
+    else:
+        json_container = container
+    params["container"] = json_container
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -64,26 +71,15 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ListResponse]:
     """List Objects
 
-     List objects in cloud storage with optional prefix filter.
-
-    Requires authentication via Bearer token.
-
-    Args:
-        prefix: Filter objects by key prefix.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Returns:
-        List of objects matching the prefix.
-
-    Raises:
-        HTTPException: If listing fails.
+     List objects in cloud storage with an optional prefix filter.
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -95,6 +91,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         prefix=prefix,
+        container=container,
     )
 
     response = client.get_httpx_client().request(
@@ -108,26 +105,15 @@ def sync(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: None | str | Unset = UNSET,
 ) -> HTTPValidationError | ListResponse | None:
     """List Objects
 
-     List objects in cloud storage with optional prefix filter.
-
-    Requires authentication via Bearer token.
-
-    Args:
-        prefix: Filter objects by key prefix.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Returns:
-        List of objects matching the prefix.
-
-    Raises:
-        HTTPException: If listing fails.
+     List objects in cloud storage with an optional prefix filter.
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -140,6 +126,7 @@ def sync(
     return sync_detailed(
         client=client,
         prefix=prefix,
+        container=container,
     ).parsed
 
 
@@ -147,26 +134,15 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ListResponse]:
     """List Objects
 
-     List objects in cloud storage with optional prefix filter.
-
-    Requires authentication via Bearer token.
-
-    Args:
-        prefix: Filter objects by key prefix.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Returns:
-        List of objects matching the prefix.
-
-    Raises:
-        HTTPException: If listing fails.
+     List objects in cloud storage with an optional prefix filter.
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -178,6 +154,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         prefix=prefix,
+        container=container,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -189,26 +166,15 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     prefix: str | Unset = "",
+    container: None | str | Unset = UNSET,
 ) -> HTTPValidationError | ListResponse | None:
     """List Objects
 
-     List objects in cloud storage with optional prefix filter.
-
-    Requires authentication via Bearer token.
-
-    Args:
-        prefix: Filter objects by key prefix.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Returns:
-        List of objects matching the prefix.
-
-    Raises:
-        HTTPException: If listing fails.
+     List objects in cloud storage with an optional prefix filter.
 
     Args:
         prefix (str | Unset): Prefix filter for object keys Default: ''.
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -222,5 +188,6 @@ async def asyncio(
         await asyncio_detailed(
             client=client,
             prefix=prefix,
+            container=container,
         )
     ).parsed

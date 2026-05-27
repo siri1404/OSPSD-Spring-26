@@ -1,0 +1,21 @@
+# Prometheus configuration for LOCAL testing
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'cloud-storage-monitor'
+    environment: 'local'
+
+scrape_configs:
+  - job_name: 'cloud-storage-service'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+    scheme: 'http'
+    static_configs:
+      - targets:
+          - 'host.docker.internal:8000'
+        labels:
+          service: 'cloud-storage-api'
+          vertical: 'storage'

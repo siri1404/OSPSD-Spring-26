@@ -7,18 +7,31 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...types import Response
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
     key: str,
+    *,
+    container: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+
+    json_container: None | str | Unset
+    if isinstance(container, Unset):
+        json_container = UNSET
+    else:
+        json_container = container
+    params["container"] = json_container
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
         "method": "delete",
         "url": "/delete/{key}".format(
             key=quote(str(key), safe=""),
         ),
+        "params": params,
     }
 
     return _kwargs
@@ -57,23 +70,15 @@ def sync_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: None | str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError]:
     """Delete Object
 
      Delete an object from cloud storage.
 
-    Requires authentication via Bearer token.
-
-    Args:
-        key: Object key/path to delete.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Raises:
-        HTTPException: If file not found or deletion fails.
-
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -85,6 +90,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         key=key,
+        container=container,
     )
 
     response = client.get_httpx_client().request(
@@ -98,23 +104,15 @@ def sync(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: None | str | Unset = UNSET,
 ) -> Any | HTTPValidationError | None:
     """Delete Object
 
      Delete an object from cloud storage.
 
-    Requires authentication via Bearer token.
-
-    Args:
-        key: Object key/path to delete.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Raises:
-        HTTPException: If file not found or deletion fails.
-
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -127,6 +125,7 @@ def sync(
     return sync_detailed(
         key=key,
         client=client,
+        container=container,
     ).parsed
 
 
@@ -134,23 +133,15 @@ async def asyncio_detailed(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: None | str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError]:
     """Delete Object
 
      Delete an object from cloud storage.
 
-    Requires authentication via Bearer token.
-
-    Args:
-        key: Object key/path to delete.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Raises:
-        HTTPException: If file not found or deletion fails.
-
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -162,6 +153,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         key=key,
+        container=container,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -173,23 +165,15 @@ async def asyncio(
     key: str,
     *,
     client: AuthenticatedClient,
+    container: None | str | Unset = UNSET,
 ) -> Any | HTTPValidationError | None:
     """Delete Object
 
      Delete an object from cloud storage.
 
-    Requires authentication via Bearer token.
-
-    Args:
-        key: Object key/path to delete.
-        token: Validated access token.
-        client: GCP storage client.
-
-    Raises:
-        HTTPException: If file not found or deletion fails.
-
     Args:
         key (str):
+        container (None | str | Unset): Storage container or bucket name
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -203,5 +187,6 @@ async def asyncio(
         await asyncio_detailed(
             key=key,
             client=client,
+            container=container,
         )
     ).parsed

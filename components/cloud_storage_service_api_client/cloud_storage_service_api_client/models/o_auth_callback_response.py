@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import Any, Literal, TypeVar, cast
 
 from attrs import define as _attrs_define
-from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
@@ -13,18 +12,18 @@ T = TypeVar("T", bound="OAuthCallbackResponse")
 
 @_attrs_define
 class OAuthCallbackResponse:
-    """Response model for OAuth callback.
+    """Response model for /auth/callback.
 
     Attributes:
-        access_token (str):
-        token_type (str | Unset):  Default: 'bearer'.
-        expires_in (int | None | Unset):
+        access_token (str): Opaque service-owned session token. The provider's actual access token is never exposed to
+            clients.
+        token_type (Literal['bearer'] | Unset): OAuth 2.0 token type. Always 'bearer'. Default: 'bearer'.
+        expires_in (int | None | Unset): Lifetime of the underlying provider token in seconds
     """
 
     access_token: str
-    token_type: str | Unset = "bearer"
+    token_type: Literal["bearer"] | Unset = "bearer"
     expires_in: int | None | Unset = UNSET
-    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         access_token = self.access_token
@@ -38,7 +37,7 @@ class OAuthCallbackResponse:
             expires_in = self.expires_in
 
         field_dict: dict[str, Any] = {}
-        field_dict.update(self.additional_properties)
+
         field_dict.update(
             {
                 "access_token": access_token,
@@ -56,7 +55,9 @@ class OAuthCallbackResponse:
         d = dict(src_dict)
         access_token = d.pop("access_token")
 
-        token_type = d.pop("token_type", UNSET)
+        token_type = cast(Literal["bearer"] | Unset, d.pop("token_type", UNSET))
+        if token_type != "bearer" and not isinstance(token_type, Unset):
+            raise ValueError(f"token_type must match const 'bearer', got '{token_type}'")
 
         def _parse_expires_in(data: object) -> int | None | Unset:
             if data is None:
@@ -73,21 +74,4 @@ class OAuthCallbackResponse:
             expires_in=expires_in,
         )
 
-        o_auth_callback_response.additional_properties = d
         return o_auth_callback_response
-
-    @property
-    def additional_keys(self) -> list[str]:
-        return list(self.additional_properties.keys())
-
-    def __getitem__(self, key: str) -> Any:
-        return self.additional_properties[key]
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        self.additional_properties[key] = value
-
-    def __delitem__(self, key: str) -> None:
-        del self.additional_properties[key]
-
-    def __contains__(self, key: str) -> bool:
-        return key in self.additional_properties

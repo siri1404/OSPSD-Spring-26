@@ -10,7 +10,6 @@ from ...types import Response
 
 
 def _get_kwargs() -> dict[str, Any]:
-
     _kwargs: dict[str, Any] = {
         "method": "post",
         "url": "/auth/login",
@@ -19,9 +18,7 @@ def _get_kwargs() -> dict[str, Any]:
     return _kwargs
 
 
-def _parse_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> OAuthLoginResponse | None:
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> OAuthLoginResponse | None:
     if response.status_code == 200:
         response_200 = OAuthLoginResponse.from_dict(response.json())
 
@@ -33,9 +30,7 @@ def _parse_response(
         return None
 
 
-def _build_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[OAuthLoginResponse]:
+def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[OAuthLoginResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -50,12 +45,7 @@ def sync_detailed(
 ) -> Response[OAuthLoginResponse]:
     """Oauth Login
 
-     Initiate OAuth 2.0 login flow with Google.
-
-    Generates an authorization URL and redirects the user to Google's OAuth consent screen.
-
-    Returns:
-        OAuth authorization URL for user redirect.
+     Initiate the OAuth 2.0 login flow with Google.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -80,12 +70,7 @@ def sync(
 ) -> OAuthLoginResponse | None:
     """Oauth Login
 
-     Initiate OAuth 2.0 login flow with Google.
-
-    Generates an authorization URL and redirects the user to Google's OAuth consent screen.
-
-    Returns:
-        OAuth authorization URL for user redirect.
+     Initiate the OAuth 2.0 login flow with Google.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -106,12 +91,7 @@ async def asyncio_detailed(
 ) -> Response[OAuthLoginResponse]:
     """Oauth Login
 
-     Initiate OAuth 2.0 login flow with Google.
-
-    Generates an authorization URL and redirects the user to Google's OAuth consent screen.
-
-    Returns:
-        OAuth authorization URL for user redirect.
+     Initiate the OAuth 2.0 login flow with Google.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -134,12 +114,7 @@ async def asyncio(
 ) -> OAuthLoginResponse | None:
     """Oauth Login
 
-     Initiate OAuth 2.0 login flow with Google.
-
-    Generates an authorization URL and redirects the user to Google's OAuth consent screen.
-
-    Returns:
-        OAuth authorization URL for user redirect.
+     Initiate the OAuth 2.0 login flow with Google.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

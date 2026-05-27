@@ -15,7 +15,6 @@ def _get_kwargs(
     code: str,
     state: str,
 ) -> dict[str, Any]:
-
     params: dict[str, Any] = {}
 
     params["code"] = code
@@ -71,20 +70,7 @@ def sync_detailed(
 ) -> Response[HTTPValidationError | OAuthCallbackResponse]:
     """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for access token.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Access token and token metadata.
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google
@@ -118,20 +104,7 @@ def sync(
 ) -> HTTPValidationError | OAuthCallbackResponse | None:
     """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for access token.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Access token and token metadata.
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google
@@ -160,20 +133,7 @@ async def asyncio_detailed(
 ) -> Response[HTTPValidationError | OAuthCallbackResponse]:
     """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for access token.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Access token and token metadata.
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google
@@ -205,20 +165,7 @@ async def asyncio(
 ) -> HTTPValidationError | OAuthCallbackResponse | None:
     """Oauth Callback
 
-     Handle OAuth 2.0 callback from Google.
-
-    Exchanges authorization code for access token.
-
-    Args:
-        code: Authorization code from Google OAuth.
-        state: State parameter for CSRF validation.
-        config: OAuth configuration.
-
-    Returns:
-        Access token and token metadata.
-
-    Raises:
-        HTTPException: If state is invalid or token exchange fails.
+     Handle Google's OAuth 2.0 callback and issue an opaque session token.
 
     Args:
         code (str): Authorization code from Google

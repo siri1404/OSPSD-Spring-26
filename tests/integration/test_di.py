@@ -1,147 +1,174 @@
-"""Integration tests for dependency injection and client registration."""
+"""Integration tests for shared cloud_storage_api contract behavior.
+
+The shared cloud_storage_api package intentionally exposes no di module.
+"""
 
 from __future__ import annotations
 
-import concurrent.futures
+import importlib
+import io
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import gcp_client_impl
 import pytest
-from cloud_storage_client_api.client import CloudStorageClient, ObjectInfo
-from cloud_storage_client_api.di import get_client, override_get_client, register_get_client
+from cloud_storage_api import CloudStorageClient, DeleteResult, ObjectInfo
+from cloud_storage_api.exceptions import ObjectNotFoundError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from typing import BinaryIO
 
 
-# Fake client for testing DI isolation and thread safety
+# ---------------------------------------------------------------------------
+# Fake client implementation
+# ---------------------------------------------------------------------------
+
+
 class _FakeClient(CloudStorageClient):
-    """This is a fake client for testing DI without real GCP calls."""
+    """In-memory fake implementing the shared CloudStorageClient contract."""
 
-    def upload_file(self, *, local_path: str, key: str, content_type: str | None = None) -> ObjectInfo:
-        raise NotImplementedError
+    def __init__(self) -> None:
+        """Initialize the in-memory object store."""
+        self._objects: dict[str, bytes] = {}
 
-    def upload_bytes(
+    def upload_file(
         self,
-        *,
-        data: bytes,
-        key: str,
-        content_type: str | None = None,
-        metadata: Mapping[str, str] | None = None,
+        container: str,
+        local_path: str,
+        remote_path: str,
     ) -> ObjectInfo:
-        raise NotImplementedError
+        """Read local_path and store it under remote_path."""
+        data = Path(local_path).read_bytes()
+        self._objects[remote_path] = data
+        return self._build_info(remote_path, len(data))
 
-    def download_bytes(self, *, key: str) -> bytes:
-        raise NotImplementedError
+    def upload_obj(
+        self,
+        container: str,
+        file_obj: BinaryIO,
+        remote_path: str,
+    ) -> ObjectInfo:
+        """Drain file_obj and store the bytes under remote_path."""
+        data = file_obj.read()
+        if not isinstance(data, bytes):
+            data = bytes(data)
+        self._objects[remote_path] = data
+        return self._build_info(remote_path, len(data))
 
-    def list(self, *, prefix: str) -> list[ObjectInfo]:
-        raise NotImplementedError
+    def download_file(
+        self,
+        container: str,
+        object_name: str,
+        file_name: str,
+    ) -> ObjectInfo:
+        """Write the stored bytes to file_name."""
+        if object_name not in self._objects:
+            msg = f"Object not found: {object_name}"
+            raise ObjectNotFoundError(msg)
+        Path(file_name).write_bytes(self._objects[object_name])
+        return self._build_info(object_name, len(self._objects[object_name]))
 
-    def delete(self, *, key: str) -> None:
-        raise NotImplementedError
+    def list_files(
+        self,
+        container: str,
+        prefix: str,
+    ) -> list[ObjectInfo]:
+        """List stored objects whose name starts with prefix, sorted by name."""
+        names = sorted(name for name in self._objects if name.startswith(prefix))
+        return [self._build_info(name, len(self._objects[name])) for name in names]
 
-    def head(self, *, key: str) -> ObjectInfo | None:
-        raise NotImplementedError
+    def delete_file(
+        self,
+        container: str,
+        object_name: str,
+    ) -> DeleteResult:
+        """Remove object_name and return a DeleteResult."""
+        if object_name not in self._objects:
+            msg = f"Object not found: {object_name}"
+            raise ObjectNotFoundError(msg)
+        del self._objects[object_name]
+        return DeleteResult(
+            deleted=True,
+            version_id=None,
+            request_charged=False,
+        )
+
+    def get_file_info(
+        self,
+        container: str,
+        object_name: str,
+    ) -> ObjectInfo:
+        """Return ObjectInfo for the stored object."""
+        if object_name not in self._objects:
+            msg = f"Object not found: {object_name}"
+            raise ObjectNotFoundError(msg)
+        return self._build_info(
+            object_name,
+            len(self._objects[object_name]),
+        )
+
+    @staticmethod
+    def _build_info(object_name: str, size_bytes: int) -> ObjectInfo:
+        """Build a deterministic ObjectInfo using the shared contract fields."""
+        return ObjectInfo(
+            object_name=object_name,
+            version_id=None,
+            data_type="application/octet-stream",
+            integrity=None,
+            encryption=None,
+            storage_tier=None,
+            size_bytes=size_bytes,
+            updated_at=datetime.now(tz=UTC),
+            metadata=None,
+        )
 
 
-def test_importing_impl_injects_factory() -> None:
-    """Legacy test - kept for backwards compatibility."""
-    client = get_client()
-    assert client.__class__.__name__ == "GCPCloudStorageClient"
+# ---------------------------------------------------------------------------
+# Contract tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_import_registers_gcp_client() -> None:
-    """Verify importing gcp_client_impl registers the factory.
-
-    This validates the auto-registration mechanism:
-    - Importing the impl module triggers registration
-    - Client is available via get_client("gcp")
-    - Client is also registered as the default provider
-    """
-    # Import already happened at module level, so registration is done
-    client = get_client("gcp")
-    assert isinstance(client, CloudStorageClient)
-    assert client.__class__.__name__ == "GCPCloudStorageClient"
-
-    # Also registered as default
-    default_client = get_client()
-    assert isinstance(default_client, CloudStorageClient)
-    assert default_client.__class__.__name__ == "GCPCloudStorageClient"
+def test_package_has_no_di_module() -> None:
+    """Shared cloud_storage_api intentionally does not expose a di module."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("cloud_storage_api.di")
 
 
 @pytest.mark.integration
-def test_multiple_providers_dont_conflict() -> None:
-    """Verify different implementations can be registered simultaneously.
+def test_fake_client_matches_shared_contract(tmp_path: Path) -> None:
+    """Fake client methods and ObjectInfo fields follow shared API semantics."""
+    client = _FakeClient()
+    container = "test-container"
+    remote_path = "prefix/object.txt"
+    payload = b"hello contract"
 
-    This validates that:
-    - Multiple named providers can coexist in the registry
-    - Each provider returns its own implementation
-    - Providers don't interfere with each other
-    """
-    # Create two different fake clients
-    fake_gcp = _FakeClient()
-    fake_aws = _FakeClient()
+    uploaded = client.upload_obj(
+        container=container,
+        file_obj=io.BytesIO(payload),
+        remote_path=remote_path,
+    )
+    assert uploaded.object_name == remote_path
+    assert uploaded.size_bytes == len(payload)
 
-    # Register them with different names
-    register_get_client(lambda: fake_gcp, name="test-gcp")
-    register_get_client(lambda: fake_aws, name="test-aws")
+    info = client.get_file_info(container=container, object_name=remote_path)
+    assert info.object_name == remote_path
+    assert info.data_type == "application/octet-stream"
 
-    # Retrieve them and verify they're distinct
-    retrieved_gcp = get_client(name="test-gcp")
-    retrieved_aws = get_client(name="test-aws")
+    download_path = tmp_path / "downloaded.bin"
+    downloaded_info = client.download_file(
+        container=container,
+        object_name=remote_path,
+        file_name=str(download_path),
+    )
+    assert downloaded_info.object_name == remote_path
+    assert download_path.read_bytes() == payload
 
-    assert retrieved_gcp is fake_gcp
-    assert retrieved_aws is fake_aws
-    assert retrieved_gcp is not retrieved_aws
+    listed = client.list_files(container=container, prefix="prefix/")
+    assert any(obj.object_name == remote_path for obj in listed)
 
+    result = client.delete_file(container=container, object_name=remote_path)
+    assert result["deleted"] is True
 
-@pytest.mark.integration
-@pytest.mark.parametrize("provider_name", ["test1", "test2", "test3"])
-def test_parallel_contexts_dont_interfere(provider_name: str) -> None:
-    """Run this with pytest -n 3 to verify parallel safety.
-
-    This validates that:
-    - Multiple pytest workers can run simultaneously
-    - ContextVar provides isolation between workers
-    - Each test instance gets its own override context
-    - No cross-contamination between parallel test runs
-
-    Run with: pytest -n 3 tests/integration/test_di.py::test_parallel_contexts_dont_interfere
-    """
-    fake = _FakeClient()
-
-    # Use override to create isolated context for this test
-    with override_get_client(lambda: fake, name=provider_name):
-        # Each parallel test should retrieve its own fake client
-        retrieved = get_client(name=provider_name)
-        assert retrieved is fake
-
-
-@pytest.mark.integration
-def test_override_is_thread_safe() -> None:
-    """Verify ContextVar provides proper isolation in multi-threaded code.
-
-    This validates that:
-    - Each thread gets its own ContextVar value
-    - Overrides in one thread don't leak to other threads
-    - Concurrent override_get_client() calls are isolated
-    - This is critical for web servers and background workers
-    """
-
-    def worker(client_id: int) -> None:
-        """Worker function that runs in a separate thread."""
-        fake = _FakeClient()
-        with override_get_client(lambda: fake, name=f"worker-{client_id}"):
-            # Each thread should get its own override
-            retrieved = get_client(name=f"worker-{client_id}")
-            assert retrieved is fake, f"Worker {client_id} got wrong client!"
-
-    # Run 10 workers across 5 threads
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(worker, i) for i in range(10)]
-
-        # Wait for all to complete and check for exceptions
-        for future in concurrent.futures.as_completed(futures):
-            # This will raise if any assertion failed in the worker
-            future.result()
+    with pytest.raises(ObjectNotFoundError):
+        client.get_file_info(container=container, object_name=remote_path)

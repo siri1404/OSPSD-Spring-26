@@ -1,5 +1,5 @@
 site_name: OSPSD-Spring-26 Documentation
-site_description: Provider-agnostic cloud storage client with Google Cloud Storage implementation
+site_description: Provider-agnostic cloud storage client with AI integration, cross-vertical chat notifications, and Prometheus/Grafana observability
 theme:
   name: material
   features:
@@ -15,9 +15,13 @@ nav:
   - Testing: testing.md
   - Architecture & Design: design.md
   - Project Structure: structure.md
+  - Deployment: deployment.md
+  - Observability: observability.md
   - CircleCI Setup: circleci-setup.md
   - Components:
-      - Cloud Storage Client API: components/cloud_storage_client_api.md
+      - AI Client API: components/ai_client_api.md
+      - Gemini AI Client: components/gemini_ai_client_impl.md
+      - Chat Client Wrapper: components/chat_client_wrapper.md
       - GCP Client Implementation: components/gcp_client_impl.md
       - Cloud Storage Adapter: components/cloud_storage_adapter.md
       - Cloud Storage Service: components/cloud_storage_service.md

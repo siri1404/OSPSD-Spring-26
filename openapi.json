@@ -1,1 +1,909 @@
-{"openapi":"3.1.0","info":{"title":"Cloud Storage Service API","description":"RESTful API for cloud storage operations with OAuth 2.0 authentication","version":"1.0.0"},"paths":{"/health":{"get":{"tags":["Health"],"summary":"Health Check","description":"Health check endpoint to verify service status.\n\nReturns:\n    Health status with timestamp.","operationId":"health_check_health_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HealthResponse"}}}}}}},"/auth/login":{"post":{"tags":["Authentication"],"summary":"Oauth Login","description":"Initiate OAuth 2.0 login flow with Google.\n\nGenerates an authorization URL and redirects the user to Google's OAuth consent screen.\n\nReturns:\n    OAuth authorization URL for user redirect.","operationId":"oauth_login_auth_login_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/OAuthLoginResponse"}}}}}}},"/auth/callback":{"get":{"tags":["Authentication"],"summary":"Oauth Callback","description":"Handle OAuth 2.0 callback from Google.\n\nExchanges authorization code for access token.\n\nArgs:\n    code: Authorization code from Google OAuth.\n    state: State parameter for CSRF validation.\n    config: OAuth configuration.\n\nReturns:\n    Access token and token metadata.\n\nRaises:\n    HTTPException: If state is invalid or token exchange fails.","operationId":"oauth_callback_auth_callback_get","parameters":[{"name":"code","in":"query","required":true,"schema":{"type":"string","description":"Authorization code from Google","title":"Code"},"description":"Authorization code from Google"},{"name":"state","in":"query","required":true,"schema":{"type":"string","description":"State parameter for CSRF protection","title":"State"},"description":"State parameter for CSRF protection"}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/OAuthCallbackResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/upload":{"post":{"tags":["Storage"],"summary":"Upload File","description":"Upload a file to cloud storage.\n\nRequires authentication via Bearer token.\n\nArgs:\n    file: File to upload (multipart/form-data).\n    key: Destination key/path in cloud storage.\n    content_type: Optional MIME type.\n    token: Validated access token.\n    client: GCP storage client.\n\nReturns:\n    Object metadata after successful upload.\n\nRaises:\n    HTTPException: If upload fails.","operationId":"upload_file_upload_post","requestBody":{"content":{"multipart/form-data":{"schema":{"$ref":"#/components/schemas/Body_upload_file_upload_post"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ObjectInfoResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"HTTPBearer":[]}]}},"/download/{key}":{"get":{"tags":["Storage"],"summary":"Download File","description":"Download a file from cloud storage.\n\nRequires authentication via Bearer token.\n\nArgs:\n    key: Object key/path to download.\n    token: Validated access token.\n    client: GCP storage client.\n\nReturns:\n    File contents as streaming response.\n\nRaises:\n    HTTPException: If file not found or download fails.","operationId":"download_file_download__key__get","security":[{"HTTPBearer":[]}],"parameters":[{"name":"key","in":"path","required":true,"schema":{"type":"string","title":"Key"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/list":{"get":{"tags":["Storage"],"summary":"List Objects","description":"List objects in cloud storage with optional prefix filter.\n\nRequires authentication via Bearer token.\n\nArgs:\n    prefix: Filter objects by key prefix.\n    token: Validated access token.\n    client: GCP storage client.\n\nReturns:\n    List of objects matching the prefix.\n\nRaises:\n    HTTPException: If listing fails.","operationId":"list_objects_list_get","security":[{"HTTPBearer":[]}],"parameters":[{"name":"prefix","in":"query","required":false,"schema":{"type":"string","description":"Prefix filter for object keys","default":"","title":"Prefix"},"description":"Prefix filter for object keys"}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ListResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/delete/{key}":{"delete":{"tags":["Storage"],"summary":"Delete Object","description":"Delete an object from cloud storage.\n\nRequires authentication via Bearer token.\n\nArgs:\n    key: Object key/path to delete.\n    token: Validated access token.\n    client: GCP storage client.\n\nRaises:\n    HTTPException: If file not found or deletion fails.","operationId":"delete_object_delete__key__delete","security":[{"HTTPBearer":[]}],"parameters":[{"name":"key","in":"path","required":true,"schema":{"type":"string","title":"Key"}}],"responses":{"204":{"description":"Successful Response"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/head/{key}":{"get":{"tags":["Storage"],"summary":"Head Object","description":"Get metadata for an object without downloading its contents.\n\nRequires authentication via Bearer token.\n\nArgs:\n    key: Object key/path to query.\n    token: Validated access token.\n    client: GCP storage client.\n\nReturns:\n    Object metadata.\n\nRaises:\n    HTTPException: If object not found or query fails.","operationId":"head_object_head__key__get","security":[{"HTTPBearer":[]}],"parameters":[{"name":"key","in":"path","required":true,"schema":{"type":"string","title":"Key"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ObjectInfoResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}}},"components":{"schemas":{"Body_upload_file_upload_post":{"properties":{"file":{"type":"string","contentMediaType":"application/octet-stream","title":"File","description":"File to upload"},"key":{"type":"string","title":"Key","description":"Object key/path in storage"},"content_type":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Type","description":"MIME type of the content"}},"type":"object","required":["file","key"],"title":"Body_upload_file_upload_post"},"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"type":"array","title":"Detail"}},"type":"object","title":"HTTPValidationError"},"HealthResponse":{"properties":{"status":{"type":"string","title":"Status"},"service":{"type":"string","title":"Service"},"timestamp":{"type":"string","format":"date-time","title":"Timestamp"}},"type":"object","required":["status","service","timestamp"],"title":"HealthResponse","description":"Response model for health check."},"ListResponse":{"properties":{"objects":{"items":{"$ref":"#/components/schemas/ObjectInfoResponse"},"type":"array","title":"Objects"}},"type":"object","required":["objects"],"title":"ListResponse","description":"Response model for listing objects."},"OAuthCallbackResponse":{"properties":{"access_token":{"type":"string","title":"Access Token"},"token_type":{"type":"string","title":"Token Type","default":"bearer"},"expires_in":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Expires In"}},"type":"object","required":["access_token"],"title":"OAuthCallbackResponse","description":"Response model for OAuth callback."},"OAuthLoginResponse":{"properties":{"auth_url":{"type":"string","title":"Auth Url","description":"URL to redirect user for OAuth authorization"}},"type":"object","required":["auth_url"],"title":"OAuthLoginResponse","description":"Response model for OAuth login."},"ObjectInfoResponse":{"properties":{"key":{"type":"string","title":"Key"},"size_bytes":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Size Bytes"},"etag":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Etag"},"updated_at":{"anyOf":[{"type":"string","format":"date-time"},{"type":"null"}],"title":"Updated At"},"content_type":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Type"},"metadata":{"anyOf":[{"additionalProperties":{"type":"string"},"type":"object"},{"type":"null"}],"title":"Metadata"}},"type":"object","required":["key"],"title":"ObjectInfoResponse","description":"Response model for object metadata."},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"array","title":"Location"},"msg":{"type":"string","title":"Message"},"type":{"type":"string","title":"Error Type"},"input":{"title":"Input"},"ctx":{"type":"object","title":"Context"}},"type":"object","required":["loc","msg","type"],"title":"ValidationError"}},"securitySchemes":{"HTTPBearer":{"type":"http","scheme":"bearer"}}}}
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Cloud Storage Service API",
+    "description": "RESTful API for cloud storage operations with OAuth 2.0 authentication. Returns the shared cross-team ObjectInfo contract.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "Health check with timestamp.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Root",
+        "description": "Root status message.",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Root  Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Oauth Login",
+        "description": "Initiate the OAuth 2.0 login flow with Google.",
+        "operationId": "oauth_login_auth_login_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/callback": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Oauth Callback",
+        "description": "Handle Google's OAuth 2.0 callback and issue an opaque session token.",
+        "operationId": "oauth_callback_auth_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Authorization code from Google",
+              "title": "Code"
+            },
+            "description": "Authorization code from Google"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "State parameter for CSRF protection",
+              "title": "State"
+            },
+            "description": "State parameter for CSRF protection"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthCallbackResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout",
+        "description": "Invalidate the current session token.",
+        "operationId": "logout_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/upload": {
+      "post": {
+        "tags": [
+          "Storage"
+        ],
+        "summary": "Upload File",
+        "description": "Upload a file to cloud storage.",
+        "operationId": "upload_file_upload_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "container",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Storage container or bucket name",
+              "title": "Container"
+            },
+            "description": "Storage container or bucket name"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file_upload_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectInfoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/download/{key}": {
+      "get": {
+        "tags": [
+          "Storage"
+        ],
+        "summary": "Download File",
+        "description": "Download a file from cloud storage.",
+        "operationId": "download_file_download__key__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "container",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Storage container or bucket name",
+              "title": "Container"
+            },
+            "description": "Storage container or bucket name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/list": {
+      "get": {
+        "tags": [
+          "Storage"
+        ],
+        "summary": "List Objects",
+        "description": "List objects in cloud storage with an optional prefix filter.",
+        "operationId": "list_objects_list_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Prefix filter for object keys",
+              "default": "",
+              "title": "Prefix"
+            },
+            "description": "Prefix filter for object keys"
+          },
+          {
+            "name": "container",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Storage container or bucket name",
+              "title": "Container"
+            },
+            "description": "Storage container or bucket name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/delete/{key}": {
+      "delete": {
+        "tags": [
+          "Storage"
+        ],
+        "summary": "Delete Object",
+        "description": "Delete an object from cloud storage.",
+        "operationId": "delete_object_delete__key__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "container",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Storage container or bucket name",
+              "title": "Container"
+            },
+            "description": "Storage container or bucket name"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/head/{key}": {
+      "get": {
+        "tags": [
+          "Storage"
+        ],
+        "summary": "Head Object",
+        "description": "Get metadata for an object without downloading its contents.",
+        "operationId": "head_object_head__key__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "container",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Storage container or bucket name",
+              "title": "Container"
+            },
+            "description": "Storage container or bucket name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectInfoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/chat": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Ai Chat",
+        "description": "Natural-language interface to cloud storage operations.\n\nAccepts a plain-English prompt and returns a human-readable response.\nThe AI may call appropriate storage tools to fulfill the request.\nA default container can be supplied via the X-Container header.",
+        "operationId": "ai_chat_ai_chat_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Container",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Container"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_ai_chat_ai_chat_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": "Response Ai Chat Ai Chat Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "Monitoring"
+        ],
+        "summary": "Metrics",
+        "description": "Expose Prometheus metrics in text format.",
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_ai_chat_ai_chat_post": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Natural language prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "Body_ai_chat_ai_chat_post"
+      },
+      "Body_upload_file_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "File to upload"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "Object key/path in storage"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type",
+            "description": "MIME type of the content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "key"
+        ],
+        "title": "Body_upload_file_upload_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ],
+            "title": "Status",
+            "description": "Service health state"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service",
+            "description": "Service identifier"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "Health-check timestamp (UTC)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "timestamp"
+        ],
+        "title": "HealthResponse",
+        "description": "Response model for the /health endpoint."
+      },
+      "ListResponse": {
+        "properties": {
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectInfoResponse"
+            },
+            "type": "array",
+            "title": "Objects",
+            "description": "Objects matching the prefix, sorted by object_name."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "objects"
+        ],
+        "title": "ListResponse",
+        "description": "Response model for listing objects."
+      },
+      "OAuthCallbackResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token",
+            "description": "Opaque service-owned session token. The provider's actual access token is never exposed to clients."
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "description": "OAuth 2.0 token type. Always 'bearer'.",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In",
+            "description": "Lifetime of the underlying provider token in seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "access_token"
+        ],
+        "title": "OAuthCallbackResponse",
+        "description": "Response model for /auth/callback."
+      },
+      "OAuthLoginResponse": {
+        "properties": {
+          "auth_url": {
+            "type": "string",
+            "title": "Auth Url",
+            "description": "URL to redirect the user for OAuth authorization"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "auth_url"
+        ],
+        "title": "OAuthLoginResponse",
+        "description": "Response model for /auth/login."
+      },
+      "ObjectInfoResponse": {
+        "properties": {
+          "object_name": {
+            "type": "string",
+            "title": "Object Name",
+            "description": "Object key/path in storage"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes",
+            "description": "Object size in bytes"
+          },
+          "integrity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrity",
+            "description": "ETag or content hash"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type",
+            "description": "MIME type (e.g. 'application/json')"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "Last modified timestamp (UTC)"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id",
+            "description": "Provider version or generation identifier"
+          },
+          "encryption": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryption",
+            "description": "KMS key name if customer-managed encryption is used"
+          },
+          "storage_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Tier",
+            "description": "Storage class (e.g. STANDARD, NEARLINE, COLDLINE, ARCHIVE)"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "Custom user-defined metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "object_name"
+        ],
+        "title": "ObjectInfoResponse",
+        "description": "Object metadata mirroring the shared cross-team ObjectInfo contract."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

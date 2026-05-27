@@ -1,148 +1,153 @@
 # Testing Guide
 
-This document explains the testing strategy and how to run different types of tests for the Cloud Storage Client with GCP implementation.
+This document explains the testing strategy and how to run tests for the Cloud Storage Client project.
 
 ## Test Markers
 
-The project uses pytest markers to categorize tests based on their requirements and suitable environments:
-
-### Core Test Types
-- `unit`: Fast, isolated tests that don't require external dependencies
-- `integration`: Tests that verify component interactions
-- `e2e`: End-to-end tests that verify the complete application workflow with real GCS
-
-### Environment-Specific Markers
-- `circleci`: Tests that can run in CI/CD environments using only environment variables
-- `local_credentials`: Tests that require a local service account key file or `GOOGLE_APPLICATION_CREDENTIALS`
+- `unit` - Fast, isolated, mocked provider calls
+- `integration` - Shared contract compliance, component interactions
+- `e2e` - Full workflows against real GCS and deployed service
+- `slack_integration` - Tests requiring Slack integration (real or mocked Slack SDK)
+- `circleci` - Runnable in CI without local credential files
+- `local_credentials` - Requires local `GOOGLE_APPLICATION_CREDENTIALS` file
 
 ## Running Tests
 
-### All Unit Tests (Fast)
+### All Unit Tests (Fast, No Credentials)
 ```bash
 uv run pytest components/ --cov=components --cov-fail-under=85
 ```
 
-### CircleCI-Compatible Tests Only
-```bash
-uv run pytest -m circleci
-```
-
-### Local Tests Only (Requires Credentials)
-```bash
-uv run pytest -m local_credentials
-```
-
-### Integration Tests
-```bash
-uv run pytest tests/integration/
-```
-
-### E2E Tests
-```bash
-uv run pytest tests/e2e/
-```
-
-### Exclude Credential-Dependent Tests
-```bash
-uv run pytest -m "not local_credentials"
-```
-
-## Test Categories by Environment
-
-### Unit Tests (`components/`)
-All unit tests live inside each component and use `@pytest.mark.unit`:
-
-| File | What it tests |
-|---|---|
-| `cloud_storage_client_api/tests/test_client_api.py` | `ObjectInfo` dataclass and `CloudStorageClient` abstract base |
-| `cloud_storage_client_api/tests/test_get_client.py` | DI registry — register, get, override, unregister |
-| `gcp_client_impl/tests/test_config.py` | `GCPCloudStorageClient` construction and config loading |
-| `gcp_client_impl/tests/test_credentials.py` | `_build_credentials()` — service account key parsing |
-| `gcp_client_impl/tests/test_object_info.py` | `_blob_to_object_info()` — GCS blob to `ObjectInfo` mapping |
-| `gcp_client_impl/tests/test_operations.py` | `upload_bytes`, `upload_file`, `download_bytes`, `list`, `delete`, `head` |
-| `gcp_client_impl/tests/test_registration.py` | Auto DI registration when `gcp_client_impl` is imported |
-| `gcp_client_impl/tests/test_storage_client.py` | `_build_storage_client()` — auth mode selection |
-
-### Integration Tests (`tests/integration/`)
-Tests marked with `@pytest.mark.integration` verify component interactions:
-- **Requirements**: No real GCS credentials needed — uses fake clients
-- **What they test**:
-  - DI registry isolation between tests
-  - Thread safety of concurrent `get_client()` calls
-  - Named provider registration (`default`, `gcp`)
-  - `override_get_client()` context manager behaviour
-
-Example command:
+### Integration Tests (No Credentials)
 ```bash
 uv run pytest tests/integration/ -v --no-cov
 ```
 
-### E2E Tests (`tests/e2e/`)
-Tests marked with `@pytest.mark.e2e` run against real GCS infrastructure.
-They are further split by credential mode:
-
-#### `@pytest.mark.circleci`
-- **Requirements**: `GCS_BUCKET_NAME`, `GOOGLE_CLOUD_PROJECT`, and `GCP_SERVICE_KEY` environment variables
-- **What they test**:
-  - Full upload / download / delete / list / head workflows against real GCS
-  - `main.py` script execution
-  - Client initialization from environment variables
-
-Example CircleCI command:
+### E2E Tests
 ```bash
-uv run pytest tests/e2e/ -m circleci --tb=short
+uv run pytest tests/e2e/ -v --no-cov
 ```
 
-#### `@pytest.mark.local_credentials`
-- **Requirements**: `GOOGLE_APPLICATION_CREDENTIALS` pointing to a local service account key file
-- **What they test**:
-  - Full workflow with file-based credentials
-  - `upload_file()` from a real local path
-  - `main.py` integration with local credentials
-
-## Authentication Modes
-
-The GCP client supports three authentication modes:
-
-### File-Based (`GOOGLE_APPLICATION_CREDENTIALS`)
-- Points to a downloaded service account JSON key file
-- Used for local development
-- **Not suitable for CI without securely mounted files**
-
-### Environment Variable (`GCP_SERVICE_KEY`)
-- Raw JSON or base64-encoded service account key stored as an env var
-- **Required for CircleCI and most CI/CD environments**
-- Never requires a file on disk
-
-### Application Default Credentials
-- No configuration needed — GCP SDK picks up credentials automatically
-- Works with `gcloud auth application-default login` locally
-- Works with workload identity in GKE/Cloud Run
-
-## Running Without Credentials
-
-Unit and integration tests always pass — no env vars needed.  E2E tests skip cleanly when `GCP_SERVICE_KEY` / `GCS_BUCKET_NAME` / `GOOGLE_CLOUD_PROJECT` are absent.  See [circleci-setup.md](circleci-setup.md) for how to configure credentials in CI.
-
----
-
-### Tests Structure
-
+### Full Suite
+```bash
+uv run pytest --cov --cov-fail-under=85
 ```
+
+## Test Categories
+
+## Test Categories
+
+### Unit Tests (`components/*/tests/`)
+
+| Component | File | What it tests |
+|---|---|---|
+| `ai_client_api` | `test_ai_client_api.py` | Abstract interface contract, `send_message()` and `tools()` methods |
+| `gemini_ai_client_impl` | `test_gemini_client.py` | Gemini client initialization, `send_message()` with tool calling, `send_message_with_metadata()` |
+| `gemini_ai_client_impl` | `test_tools.py` | 6 storage tool Pydantic models validation, tool dispatch, context injection |
+| `chat_client_wrapper` | `test_wrapper.py` | `ChatNotificationWrapper.notify()`, message formatters, error resilience |
+| `gcp_client_impl` | `test_config.py` | Constructor config precedence, no `bucket_name` in config |
+| `gcp_client_impl` | `test_error_mapping.py` | GCP exception → domain exception translation (read/write paths) |
+| `gcp_client_impl` | `test_object_info.py` | `_blob_to_object_info` maps all 9 shared `ObjectInfo` fields |
+| `gcp_client_impl` | `test_edge_cases.py` | Empty uploads, special characters, missing objects |
+| `gcp_client_impl` | `test_storage_client.py` | Service account and ADC client construction |
+| `cloud_storage_adapter` | `test_adapter_operations.py` | All 6 shared methods via mocked generated client |
+| `cloud_storage_adapter` | `test_adapter_edge_cases.py` | Metadata handling, empty results, idempotent delete |
+| `cloud_storage_adapter` | `test_adapter_integration.py` | Live service tests (skipped when service unavailable) |
+| `cloud_storage_service` | `test_auth.py` | OAuth login, callback, opaque session tokens, dev token bypass |
+| `cloud_storage_service` | `test_storage.py` | All storage endpoints with mocked storage client |
+| `cloud_storage_service` | `test_ai_chat.py` | `/ai/chat` endpoint, tool calling, error handling |
+| `cloud_storage_service` | `test_health.py` | Health endpoint |
+| `cloud_storage_service` | `test_service_edge_cases.py` | Auth config, OAuth URL, key/prefix edge cases |
+| `cloud_storage_service` | `test_slack_adapter.py` | SlackChatClient implementation, notification dispatch |
+
+### Integration Tests (`tests/integration/`)
+
+| Test File | What it tests |
+|---|---|
+| `test_di.py` | Shared `cloud_storage_api` contract compliance via `_FakeClient` |
+| `test_ai_storage_flow.py` | AI client → storage client tool dispatch flow |
+| `test_ai_chat_flow.py` | AI client → chat client notification flow |
+
+Full contract compliance workflow: upload → get_info → download → list → delete → verify deleted. No real GCS credentials needed.
+
+### E2E Tests (`tests/e2e/`)
+
+| Test File | What it tests |
+|---|---|
+| `test_e2e.py` | Full GCS workflows with real credentials, all 6 shared methods, adapter/GCP interoperability, OAuth, health checks |
+| `test_e2e_workflow.py` | Post-deployment E2E against live Render service (hw-3 branch only) |
+
+Tests skip cleanly when credentials are absent, so the pipeline still passes.
+
+## Authentication for E2E Tests
+
+Three modes are supported:
+
+| Mode | Env Vars Needed |
+|---|---|
+| Service account JSON | `GCP_SERVICE_KEY`, `GCS_BUCKET_NAME`, `GOOGLE_CLOUD_PROJECT` |
+| Service account file | `GOOGLE_APPLICATION_CREDENTIALS`, `GCS_BUCKET_NAME` |
+| ADC (`gcloud` login) | `GCS_BUCKET_NAME` |
+
+E2E tests skip cleanly when credentials are absent, so the pipeline still passes.
+
+## Test Structure
+
+```text
 tests/
-├── integration/          # Cross-component interaction
-│   └── test_di.py       # DI registration, provider switching, thread safety
-└── e2e/                 # Real GCS workflows
-    └── test_e2e.py      # Syntax, imports, full CRUD operations
+├── mocks/                                      # Shared test fixtures
+│   ├── mock_ai_client.py                       # MockAiClient for storage tests
+│   └── mock_chat_client.py                     # MockChatClient for service tests
+├── integration/
+│   ├── conftest.py                             # Integration test fixtures
+│   ├── test_di.py                              # Shared contract compliance
+│   ├── test_ai_storage_flow.py                 # AI → storage tool dispatch
+│   └── test_ai_chat_flow.py                    # AI → chat notification flow
+└── e2e/
+    ├── test_e2e.py                             # Full workflows (real GCS)
+    └── test_e2e_workflow.py                    # Post-deploy (Render service)
 
 components/
-├── cloud_storage_client_api/tests/
-│   ├── test_client_api.py       # ObjectInfo immutability, ABC contract
-│   └── test_get_client.py       # DI factory behavior
-└── gcp_client_impl/tests/
-    ├── test_config.py           # Config precedence, env var fallbacks
-    ├── test_credentials.py      # Auth parsing, JSON validation
-    ├── test_storage_client.py   # Service account and ADC modes
-    ├── test_operations.py       # Upload, download, list, delete, head
-    ├── test_object_info.py      # ObjectInfo field validation
-    └── test_registration.py     # DI auto-registration on import
+├── ai_client_api/tests/
+│   └── test_ai_client_api.py                   # Interface contract
+├── gemini_ai_client_impl/tests/
+│   ├── test_gemini_client.py                   # Client initialization + send_message
+│   └── test_tools.py                           # Tool validation + dispatch
+├── chat_client_wrapper/tests/
+│   └── test_wrapper.py                         # ChatNotificationWrapper + formatters
+├── gcp_client_impl/tests/
+│   ├── test_config.py                          # Config precedence
+│   ├── test_error_mapping.py                   # Exception translation
+│   ├── test_edge_cases.py                      # Boundary conditions
+│   ├── test_object_info.py                     # ObjectInfo field mapping
+│   └── test_storage_client.py                  # Client construction
+├── cloud_storage_adapter/tests/
+│   ├── test_adapter_operations.py              # All 6 shared methods (mocked)
+│   ├── test_adapter_edge_cases.py              # Metadata, empty results
+│   └── test_adapter_integration.py             # Live service (skipped if unavailable)
+└── cloud_storage_service/tests/
+    ├── conftest.py                             # Service test fixtures
+    ├── test_auth.py                            # OAuth flow, session tokens
+    ├── test_storage.py                         # Storage endpoints
+    ├── test_ai_chat.py                         # AI chat endpoint
+    ├── test_health.py                          # Health endpoint
+    ├── test_service_edge_cases.py              # Auth config edge cases
+    ├── test_slack_adapter.py                   # SlackChatClient
+    ├── test_integration_ai_storage.py          # AI + storage integration
+    ├── test_integration_ai_chat.py             # AI + chat integration
+    └── test_integration_ai_to_chat.py          # AI tool call → chat notification
 ```
+
+## Coverage
+
+Coverage threshold is 85% and is enforced both in `pyproject.toml` (`fail_under = 85`) and in the CircleCI `unit_test` job (`--cov-fail-under=85`).
+
+Run locally to verify:
+
+```bash
+uv run pytest --cov --cov-fail-under=85
+```
+
+The workspace maintains 85%+ coverage with 250+ tests.
+
+See [circleci-setup.md](circleci-setup.md) for CI credential configuration.

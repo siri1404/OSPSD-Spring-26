@@ -53,31 +53,15 @@ class BodyUploadFileUploadPost:
     def to_multipart(self) -> types.RequestFiles:
         files: types.RequestFiles = []
 
-        # FastAPI's UploadFile dependency requires an explicit filename for proper parsing
-        effective_filename = "upload.bin"
-        if isinstance(self.key, str) and self.key:
-            effective_filename = (
-                self.key.rsplit("/", maxsplit=1)[-1] or effective_filename
-            )
-
-        effective_content_type = "application/octet-stream"
-        if isinstance(self.content_type, str) and self.content_type:
-            effective_content_type = self.content_type
-
-        file_payload = (
-            self.file if isinstance(self.file, bytes) else str(self.file).encode()
-        )
-
-        files.append(
-            ("file", (effective_filename, file_payload, effective_content_type))
-        )
+        files.append(("file", (None, str(self.file).encode(), "text/plain")))
 
         files.append(("key", (None, str(self.key).encode(), "text/plain")))
 
         if not isinstance(self.content_type, Unset):
-            files.append(
-                ("content_type", (None, str(self.content_type).encode(), "text/plain"))
-            )
+            if isinstance(self.content_type, str):
+                files.append(("content_type", (None, str(self.content_type).encode(), "text/plain")))
+            else:
+                files.append(("content_type", (None, str(self.content_type).encode(), "text/plain")))
 
         for prop_name, prop in self.additional_properties.items():
             files.append((prop_name, (None, str(prop).encode(), "text/plain")))

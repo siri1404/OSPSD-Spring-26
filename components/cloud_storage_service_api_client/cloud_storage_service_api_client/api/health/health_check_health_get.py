@@ -10,7 +10,6 @@ from ...types import Response
 
 
 def _get_kwargs() -> dict[str, Any]:
-
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/health",
@@ -19,9 +18,7 @@ def _get_kwargs() -> dict[str, Any]:
     return _kwargs
 
 
-def _parse_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HealthResponse | None:
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> HealthResponse | None:
     if response.status_code == 200:
         response_200 = HealthResponse.from_dict(response.json())
 
@@ -33,9 +30,7 @@ def _parse_response(
         return None
 
 
-def _build_response(
-    *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HealthResponse]:
+def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[HealthResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -50,10 +45,7 @@ def sync_detailed(
 ) -> Response[HealthResponse]:
     """Health Check
 
-     Health check endpoint to verify service status.
-
-    Returns:
-        Health status with timestamp.
+     Health check with timestamp.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -78,10 +70,7 @@ def sync(
 ) -> HealthResponse | None:
     """Health Check
 
-     Health check endpoint to verify service status.
-
-    Returns:
-        Health status with timestamp.
+     Health check with timestamp.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -102,10 +91,7 @@ async def asyncio_detailed(
 ) -> Response[HealthResponse]:
     """Health Check
 
-     Health check endpoint to verify service status.
-
-    Returns:
-        Health status with timestamp.
+     Health check with timestamp.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -128,10 +114,7 @@ async def asyncio(
 ) -> HealthResponse | None:
     """Health Check
 
-     Health check endpoint to verify service status.
-
-    Returns:
-        Health status with timestamp.
+     Health check with timestamp.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

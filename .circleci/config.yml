@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - checkout
       - run:
@@ -16,7 +16,7 @@ jobs:
       - run:
           name: "Create Venv & Install Dependencies"
           command: |
-            uv venv --python 3.11
+            uv venv --python 3.12
             source .venv/bin/activate
             uv sync --all-packages --group dev --verbose
       - run:
@@ -33,7 +33,7 @@ jobs:
 
   lint:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -50,7 +50,7 @@ jobs:
 
   typecheck:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -58,11 +58,11 @@ jobs:
           name: "Mypy Strict"
           command: |
             source .venv/bin/activate
-            mypy components/
+            mypy .
 
   unit_test:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -90,7 +90,7 @@ jobs:
 
   integration_test:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
@@ -108,31 +108,119 @@ jobs:
       - store_artifacts:
           path: test-results/integration
 
-  e2e_test:
+  mkdocs_build:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - attach_workspace:
           at: .
       - run:
-          name: "Run E2E Tests"
+          name: "MkDocs Build"
           command: |
             source .venv/bin/activate
-            mkdir -p test-results/e2e
-            pytest tests/e2e/ \
-              --junitxml=test-results/e2e/junit.xml \
+            mkdocs build --strict
+      - store_artifacts:
+          path: site
+          destination: docs-site
+
+  terraform_plan:
+    docker:
+      - image: hashicorp/terraform:1.8
+    working_directory: ~/project/infrastructure
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: "Terraform Init"
+          command: terraform init -input=false
+      - run:
+          name: "Terraform Format Check"
+          command: terraform fmt -check -recursive
+      - run:
+          name: "Terraform Validate"
+          command: terraform validate
+      - run:
+          name: "Terraform Plan"
+          command: terraform plan -input=false -out=tfplan
+      - persist_to_workspace:
+          root: ~/project
+          paths:
+            - infrastructure/tfplan
+            - infrastructure/.terraform
+            - infrastructure/.terraform.lock.hcl
+
+  terraform_apply:
+    docker:
+      - image: hashicorp/terraform:1.8
+    working_directory: ~/project/infrastructure
+    steps:
+      - checkout:
+          path: ~/project
+      - attach_workspace:
+          at: ~/project
+      - run:
+          name: "Terraform Init"
+          command: terraform init -input=false
+      - run:
+          name: "Import existing Render services if not in state"
+          command: |
+            if ! terraform state list | grep -q "render_web_service.cloud_storage"; then
+              echo "cloud_storage not in state, importing..."
+              terraform import render_web_service.cloud_storage $RENDER_SERVICE_ID
+            else
+              echo "cloud_storage already in state, skipping"
+            fi
+      - run:
+          name: "Terraform Plan (post-import)"
+          command: terraform plan -input=false -out=tfplan
+      - run:
+          name: "Terraform Apply"
+          command: terraform apply -input=false -auto-approve tfplan
+      - run:
+          name: "Export STAGING_SERVICE_URL for downstream jobs"
+          command: |
+            mkdir -p ~/project/deploy-output
+            terraform output -raw service_url > ~/project/deploy-output/staging_service_url.txt
+            echo "Deployed: $(cat ~/project/deploy-output/staging_service_url.txt)"
+      - persist_to_workspace:
+          root: ~/project
+          paths:
+            - deploy-output/staging_service_url.txt
+
+  post_deploy_e2e:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: "Brief settle after deploy verification"
+          command: |
+            echo "Deploy verified by check_render_deploy. Brief settle..."
+            sleep 10
+      - run:
+          name: "Run E2E against deployed service"
+          command: |
+            source .venv/bin/activate
+            : "${RENDER_SERVICE_URL:?RENDER_SERVICE_URL must be set in render-deploy context}"
+            : "${DEV_AUTH_TOKEN:?DEV_AUTH_TOKEN must be set in render-deploy context}"
+            : "${GCS_BUCKET_NAME:?GCS_BUCKET_NAME must be set in render-deploy context}"
+            export STAGING_SERVICE_URL="$RENDER_SERVICE_URL"
+            echo "Running e2e against: $STAGING_SERVICE_URL"
+            echo "Using bucket: $GCS_BUCKET_NAME"
+            mkdir -p test-results/post-deploy-e2e
+            pytest tests/e2e/test_e2e_workflow.py \
+              --junitxml=test-results/post-deploy-e2e/junit.xml \
               -v \
               --no-cov
       - store_test_results:
-          path: test-results/e2e
+          path: test-results/post-deploy-e2e
       - store_artifacts:
-          path: test-results/e2e
-
-
+          path: test-results/post-deploy-e2e
 
   check_render_deploy:
     docker:
-      - image: cimg/python:3.11
+      - image: cimg/python:3.12
     steps:
       - run:
           name: "Wait for and Check Render Deployment"
@@ -183,15 +271,59 @@ workflows:
           requires:
             - build
       - integration_test:
+          # No context needed: all integration tests run with mocked AI/chat/storage
+          # clients at the FastAPI DI boundary. See tests/integration/conftest.py
+          # docstring for the mocking strategy.
           requires:
             - unit_test
-      - e2e_test:
+      - mkdocs_build:
           requires:
-            - integration_test
+            - build
+      - terraform_plan:
+          requires:
+            - lint
+          filters:
+            branches:
+              ignore:
+                - main
+      # ────────────────────────────────────────────────────────────────
+      # DISABLED: Terraform apply is broken on Render free tier.
+      #
+      # The render-oss/render v1.8.0 provider (the latest released)
+      # sends `maintenance_mode` in every update payload. Render's
+      # free-tier API rejects updates that touch that field. There is
+      # no provider version that omits it on free tier.
+      #
+      # Code deploys continue to flow via Render's auto_deploy=true.
+      # post_deploy_e2e is rewired below to validate the live deploy
+      # without requiring terraform_apply.
+      #
+      # Re-enable terraform_apply when:
+      #   - The project moves to a paid Render tier, OR
+      #   - A new provider version omits maintenance_mode on free tier.
+      # ────────────────────────────────────────────────────────────────
+      # - terraform_apply:
+      #     requires:
+      #       - terraform_plan
+      #       - integration_test
+      #     filters:
+      #       branches:
+      #         only:
+      #           - hw-3
       - check_render_deploy:
+          context: render-deploy
           requires:
-            - e2e_test
+            - build
+            - integration_test
           filters:
             branches:
               only:
-                - hw-2
+                - hw-3
+      - post_deploy_e2e:
+          context: render-deploy
+          requires:
+            - check_render_deploy
+          filters:
+            branches:
+              only:
+                - hw-3

@@ -1,0 +1,115 @@
+[project]
+name = "gemini-ai-client-impl"
+version = "0.1.0"
+description = "Gemini AI client implementation with tool calling for cloud storage"
+requires-python = ">=3.12"
+dependencies = [
+    "ai-client-api",
+    "cloud-storage-api",
+    "google-genai>=1.0,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-mock>=3.10.0",
+    "mypy>=1.17.0",
+    "ruff>=0.12.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gemini_ai_client_impl"]
+
+[tool.uv.sources]
+ai-client-api = { workspace = true }
+cloud-storage-api = { git = "https://github.com/2SpaceMasterRace/ospsd-cloud-storage.git", tag = "v1.0.0" }
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--tb=short",
+    "--cov=gemini_ai_client_impl",
+    "--cov-report=term-missing",
+]
+markers = [
+    "unit: unit tests with mocked dependencies",
+    "integration: tests that exercise real clients with stubbed transports",
+]
+
+# ============================================================================
+# Coverage
+# ============================================================================
+
+[tool.coverage.run]
+source = ["src/gemini_ai_client_impl"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if name == .main.:",
+]
+
+# ============================================================================
+# MyPy — strict mode
+# ============================================================================
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "google.genai"
+ignore_missing_imports = true
+# Reason: google-genai ships incomplete type stubs; the library is not fully typed.
+
+[[tool.mypy.overrides]]
+module = "google.genai.*"
+ignore_missing_imports = true
+
+# ============================================================================
+# Ruff — hyper-strict
+# ============================================================================
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D203",     # one-blank-line-before-class (conflicts with D211)
+    "D213",     # multi-line-summary-second-line (conflicts with D212)
+    "COM812",   # trailing-comma-missing (conflicts with formatter)
+    "ISC001",   # single-line-implicit-string-concatenation (conflicts with formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",     # asserts are expected in tests
+    "PLR2004",  # magic numbers are fine in tests
+    "ANN201",   # tests don't need return type annotations
+    "D",        # tests don't need full docstring coverage
+    "SLF001",   # tests can access private members for boundary verification
+    "S108",     # /tmp paths in tests are not a security risk
+    "INP001",   # tests/ has no __init__.py - not a package in pytest
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

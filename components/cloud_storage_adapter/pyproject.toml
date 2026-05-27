@@ -1,11 +1,20 @@
 [project]
 name = "cloud-storage-adapter"
 version = "0.1.0"
-requires-python = ">=3.11"
+description = "HTTP adapter for cloud storage operations"
+requires-python = ">=3.12"
 dependencies = [
-    "cloud-storage-client-api",
+    "cloud-storage-api",
     "cloud-storage-service-api-client",
-    "httpx>=0.26.0",
+    "httpx>=0.26.0,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "mypy>=1.11.0",
+    "ruff>=0.6.0",
 ]
 
 [build-system]
@@ -15,6 +24,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cloud_storage_adapter"]
 
-[tool.uv.sources]
-cloud-storage-client-api = { workspace = true }
-cloud-storage-service-api-client = { workspace = true }
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--strict-markers"
+markers = [
+    "unit: unit tests with mocked dependencies",
+    "integration: integration tests against live cloud storage service",
+]
